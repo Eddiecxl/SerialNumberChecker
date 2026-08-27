@@ -418,7 +418,6 @@ export default function Home() {
             <div className="sync-pill"><span className="pulse-dot" />{fileName || 'Waiting for workbook'}</div>
             <button className="import-button" onClick={() => fileInput.current?.click()}>Import Excel</button>
             <input ref={fileInput} type="file" accept=".xlsx" onChange={importExcel} hidden />
-            <div className="avatar">EC</div>
           </div>
         </header>
 
