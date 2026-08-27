@@ -28,6 +28,7 @@ type RamSpec = {
 
 const normalize = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
+const hpCountryCode = 'MY';
 
 function describeCpu(unitParts: HpPart[], spareParts: HpPart[]) {
   const unit = unitParts.find((part) => {
@@ -200,7 +201,7 @@ export async function POST(request: Request) {
     if (!/^[A-Z0-9-]{4,32}$/.test(cleanSerial)) {
       return NextResponse.json({ error: 'Invalid serial number' }, { status: 400 });
     }
-    const input = `/SerialNumber/GetSerialNumber/${encodeURIComponent(cleanSerial)}/country/US/usertype/EXT`;
+    const input = `/SerialNumber/GetSerialNumber/${encodeURIComponent(cleanSerial)}/country/${hpCountryCode}/usertype/EXT`;
     const response = await fetch(`https://partsurfer.hpcloud.hp.com/bff/proxy/get?input=${input}`, {
       headers: {
         Accept: 'application/json, text/plain, */*',
