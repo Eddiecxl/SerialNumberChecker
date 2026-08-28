@@ -39,6 +39,15 @@ Use these settings:
 
 After the connection is saved, every push to `main` builds and deploys automatically. Other branches can produce preview versions using Cloudflare's default preview command.
 
+This repository also includes `.github/workflows/deploy-cloudflare.yml` as a deployment path that is visible in GitHub Actions. To use that path, add these repository secrets under **GitHub → Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | A Cloudflare API token allowed to deploy Workers (use the narrow Workers deployment permissions) |
+| `CLOUDFLARE_ACCOUNT_ID` | The Cloudflare account ID that owns `ctc-serial-spec` |
+
+Once those two secrets exist, every push to `main` runs the privacy-safe build and deploys the Worker. Use either this GitHub Actions workflow or Cloudflare Workers Builds for production, rather than enabling both at the same time, to avoid duplicate deployments.
+
 ### Custom domain
 
 The simplest option is **Cloudflare Dashboard → Workers & Pages → ctc-serial-spec → Settings → Domains & Routes → Add → Custom Domain**. Enter a hostname from a domain already active in the same Cloudflare account. Cloudflare creates the DNS record and TLS certificate.
