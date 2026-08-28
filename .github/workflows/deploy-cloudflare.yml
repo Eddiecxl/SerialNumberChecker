@@ -33,9 +33,17 @@ jobs:
       - name: Build privacy-safe Cloudflare bundle
         run: npm run build:cloud
 
+      - name: Verify Cloudflare credentials
+        shell: bash
+        run: |
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not configured in GitHub repository secrets."
+            exit 1
+          fi
+          if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is not configured in GitHub repository secrets."
+            exit 1
+          fi
+
       - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+        run: npm run deploy:ci

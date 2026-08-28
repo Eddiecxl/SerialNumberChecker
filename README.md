@@ -46,7 +46,7 @@ This repository also includes `.github/workflows/deploy-cloudflare.yml` as a dep
 | `CLOUDFLARE_API_TOKEN` | A Cloudflare API token allowed to deploy Workers (use the narrow Workers deployment permissions) |
 | `CLOUDFLARE_ACCOUNT_ID` | The Cloudflare account ID that owns `ctc-serial-spec` |
 
-Once those two secrets exist, every push to `main` runs the privacy-safe build and deploys the Worker. Use either this GitHub Actions workflow or Cloudflare Workers Builds for production, rather than enabling both at the same time, to avoid duplicate deployments.
+Once those two secrets exist, every push to `main` runs the privacy-safe build and deploys the Worker. The workflow now checks both values before invoking `npm run deploy:ci`, so a missing secret is reported directly instead of appearing as an opaque Wrangler action exit code. Use either this GitHub Actions workflow or Cloudflare Workers Builds for production, rather than enabling both at the same time, to avoid duplicate deployments.
 
 ### Custom domain
 
