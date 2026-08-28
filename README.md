@@ -39,14 +39,7 @@ Use these settings:
 
 After the connection is saved, every push to `main` builds and deploys automatically. Other branches can produce preview versions using Cloudflare's default preview command.
 
-This repository also includes `.github/workflows/deploy-cloudflare.yml` as a deployment path that is visible in GitHub Actions. To use that path, add these repository secrets under **GitHub → Settings → Secrets and variables → Actions**:
-
-| Secret | Value |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN` | A Cloudflare API token allowed to deploy Workers (use the narrow Workers deployment permissions) |
-| `CLOUDFLARE_ACCOUNT_ID` | The Cloudflare account ID that owns `ctc-serial-spec` |
-
-Once those two secrets exist, every push to `main` runs the privacy-safe build and deploys the Worker. The workflow now checks both values before invoking `npm run deploy:ci`, so a missing secret is reported directly instead of appearing as an opaque Wrangler action exit code. Use either this GitHub Actions workflow or Cloudflare Workers Builds for production, rather than enabling both at the same time, to avoid duplicate deployments.
+Cloudflare Workers Builds supplies and stores the deployment authorization for the connected Worker, so this repository does not require a GitHub API-token secret. Do not add a separate GitHub Actions deployment unless you specifically want to manage Cloudflare credentials yourself.
 
 ### Custom domain
 
