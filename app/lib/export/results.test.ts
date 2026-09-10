@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildReviewRows, buildSpecResultRows } from "./results";
+import {
+  buildEvidenceRows,
+  buildPrimaryResultRows,
+  buildReviewRows,
+  buildSpecResultRows,
+} from "./results";
 
 const device = (index: number, role: "New" | "Old", validationStatus = "supported") => ({
   sourceSheet: "Sheet1",
@@ -61,5 +66,39 @@ describe("buildReviewRows", () => {
     ]);
     expect(rows.map((row) => row.ValidationStatus)).toEqual(["REVIEW REQUIRED", "UNRESOLVED"]);
     expect(rows.every((row) => Boolean(row.RecommendedAction))).toBe(true);
+    expect(Object.keys(rows[0])).toEqual([
+      "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName",
+      "CPU", "RAM", "ValidationStatus", "ReviewReason", "RecommendedAction",
+      "CandidateProducts", "HPSource",
+    ]);
+  });
+});
+
+describe("readable export views", () => {
+  it("keeps the main results focused on business-useful specifications", () => {
+    const [row] = buildPrimaryResultRows([device(1, "New")]);
+
+    expect(Object.keys(row)).toEqual([
+      "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName",
+      "CPU", "RAM", "ValidationStatus", "Storage", "Graphics", "Display",
+      "Battery", "Network", "Power", "Keyboard", "SystemBoard", "OperatingSystem",
+      "ReviewReason", "SourceSheet", "SourceRow", "HPSource",
+    ]);
+    expect(row).not.toHaveProperty("EvidenceDescriptions");
+    expect(row.Storage).toBe("SSD 512GB NVMe");
+  });
+
+  it("places lookup metadata and long evidence in a dedicated evidence row", () => {
+    const [row] = buildEvidenceRows([device(1, "New")]);
+
+    expect(Object.keys(row)).toEqual([
+      "Role", "SerialNumber", "SourceSheet", "SourceRow", "SourceModel",
+      "SourceProductNumber", "SourceAsset", "HPProductNumber", "HPProductName",
+      "ValidationStatus", "ReviewReason", "MatchMethod", "CandidateCount", "CandidateProducts", "CPUDescriptionEvidence",
+      "RAMDescriptionEvidence", "EvidencePartNumbers", "EvidenceDescriptions",
+      "Optical", "Audio", "OtherSpecifications", "LookupCountry", "LookupTime", "HPSource",
+    ]);
+    expect(row.EvidenceDescriptions).toBe("SPS-SSD 512GB NVMe");
+    expect(row.LookupCountry).toBe("Malaysia");
   });
 });

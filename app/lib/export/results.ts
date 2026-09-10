@@ -45,6 +45,21 @@ export type SpecResultRow = Record<string, ExportCell> & {
   ValidationStatus: string;
 };
 
+export type PrimaryResultRow = Pick<SpecResultRow,
+  "Role" | "SerialNumber" | "ValidationStatus" | "SourceSheet" | "SourceRow"
+> & Record<string, ExportCell>;
+
+export type ReviewResultRow = Record<string, ExportCell> & {
+  Role: string;
+  SerialNumber: string;
+  ValidationStatus: string;
+  RecommendedAction: string;
+};
+
+export type EvidenceResultRow = Pick<SpecResultRow,
+  "Role" | "SerialNumber" | "SourceSheet" | "SourceRow"
+> & Record<string, ExportCell>;
+
 function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
@@ -105,13 +120,78 @@ export function buildSpecResultRows(devices: ExportDevice[]): SpecResultRow[] {
   });
 }
 
-export function buildReviewRows(devices: ExportDevice[]): Array<SpecResultRow & { RecommendedAction: string }> {
+export function buildPrimaryResultRows(devices: ExportDevice[]): PrimaryResultRow[] {
+  return buildSpecResultRows(devices).map((row) => ({
+    Role: row.Role,
+    SerialNumber: row.SerialNumber,
+    SourceModel: row.SourceModel,
+    HPProductNumber: row.HPProductNumber,
+    HPProductName: row.HPProductName,
+    CPU: row.CPU,
+    RAM: row.RAM,
+    ValidationStatus: row.ValidationStatus,
+    Storage: row.Storage,
+    Graphics: row.Graphics,
+    Display: row.Display,
+    Battery: row.Battery,
+    Network: row.Network,
+    Power: row.Power,
+    Keyboard: row.Keyboard,
+    SystemBoard: row.SystemBoard,
+    OperatingSystem: row.OperatingSystem,
+    ReviewReason: row.ReviewReason,
+    SourceSheet: row.SourceSheet,
+    SourceRow: row.SourceRow,
+    HPSource: row.HPSource,
+  }));
+}
+
+export function buildReviewRows(devices: ExportDevice[]): ReviewResultRow[] {
   return buildSpecResultRows(devices)
     .filter((row) => row.ValidationStatus !== "VERIFIED")
     .map((row) => ({
-      ...row,
+      Role: row.Role,
+      SerialNumber: row.SerialNumber,
+      SourceModel: row.SourceModel,
+      HPProductNumber: row.HPProductNumber,
+      HPProductName: row.HPProductName,
+      CPU: row.CPU,
+      RAM: row.RAM,
+      ValidationStatus: row.ValidationStatus,
+      ReviewReason: row.ReviewReason,
       RecommendedAction: row.ValidationStatus === "UNRESOLVED"
         ? "Retry the lookup; if HP still returns no result, verify the serial and inspect the device manually."
         : "Open the HP source and compare product candidates and field evidence before sharing with a customer.",
+      CandidateProducts: row.CandidateProducts,
+      HPSource: row.HPSource,
     }));
+}
+
+export function buildEvidenceRows(devices: ExportDevice[]): EvidenceResultRow[] {
+  return buildSpecResultRows(devices).map((row) => ({
+    Role: row.Role,
+    SerialNumber: row.SerialNumber,
+    SourceSheet: row.SourceSheet,
+    SourceRow: row.SourceRow,
+    SourceModel: row.SourceModel,
+    SourceProductNumber: row.SourceProductNumber,
+    SourceAsset: row.SourceAsset,
+    HPProductNumber: row.HPProductNumber,
+    HPProductName: row.HPProductName,
+    ValidationStatus: row.ValidationStatus,
+    ReviewReason: row.ReviewReason,
+    MatchMethod: row.MatchMethod,
+    CandidateCount: row.CandidateCount,
+    CandidateProducts: row.CandidateProducts,
+    CPUDescriptionEvidence: row.CPUDescriptionEvidence,
+    RAMDescriptionEvidence: row.RAMDescriptionEvidence,
+    EvidencePartNumbers: row.EvidencePartNumbers,
+    EvidenceDescriptions: row.EvidenceDescriptions,
+    Optical: row.Optical,
+    Audio: row.Audio,
+    OtherSpecifications: row.OtherSpecifications,
+    LookupCountry: row.LookupCountry,
+    LookupTime: row.LookupTime,
+    HPSource: row.HPSource,
+  }));
 }

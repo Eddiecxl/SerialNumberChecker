@@ -4,11 +4,13 @@ declare module 'xlsx-populate/browser/xlsx-populate' {
     rowNumber(): number;
     style(name: string): unknown;
     style(properties: Record<string, unknown>): Cell;
+    hyperlink(value: string): Cell;
     value(): unknown;
     value(value: unknown): Cell;
   }
 
   export interface Range {
+    autoFilter(): Range;
     clear(): Range;
     startCell(): Cell;
     style(properties: Record<string, unknown>): Range;
@@ -29,10 +31,13 @@ declare module 'xlsx-populate/browser/xlsx-populate' {
     cell(address: string): Cell;
     cell(row: number, column: number): Cell;
     column(index: number): Column;
-    freezePanes(columns: number, rows: number): Sheet;
+    gridLinesVisible(value: boolean): Sheet;
+    name(value: string): Sheet;
+    panes(): { state?: string; xSplit?: number; ySplit?: number } | undefined;
     name(): string;
     range(startRow: number, startColumn: number, endRow: number, endColumn: number): Range;
     row(index: number): Row;
+    tabColor(value: string): Sheet;
     usedRange(): Range | undefined;
   }
 
@@ -40,11 +45,22 @@ declare module 'xlsx-populate/browser/xlsx-populate' {
     addSheet(name: string): Sheet;
     outputAsync(): Promise<Blob | ArrayBuffer>;
     sheet(name: string): Sheet | undefined;
+    sheet(index: number): Sheet | undefined;
     sheets(): Sheet[];
   }
 
   interface XlsxPopulateStatic {
     fromDataAsync(data: ArrayBuffer): Promise<Workbook>;
+  }
+
+  const XlsxPopulate: XlsxPopulateStatic;
+  export default XlsxPopulate;
+}
+
+declare module 'xlsx-populate' {
+  interface XlsxPopulateStatic {
+    fromBlankAsync(): Promise<import('xlsx-populate/browser/xlsx-populate').Workbook>;
+    fromDataAsync(data: Buffer | ArrayBuffer): Promise<import('xlsx-populate/browser/xlsx-populate').Workbook>;
   }
 
   const XlsxPopulate: XlsxPopulateStatic;

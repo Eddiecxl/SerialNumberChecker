@@ -10,7 +10,9 @@ import { normalizeDevices } from './lib/workbook/normalizer';
 import type { LayoutAnalysis, WorkbookProfile } from './lib/workbook/types';
 import { sanitizeWorkbookProfile, validateSuggestedMappings } from './lib/workbook/sanitize';
 import { LookupQueue } from './lib/lookup/queue';
-import { buildReviewRows, buildSpecResultRows } from './lib/export/results';
+import { buildEvidenceRows as buildExportEvidenceRows, buildPrimaryResultRows, buildReviewRows } from './lib/export/results';
+import { writeResultWorksheets } from './lib/export/workbook-layout';
+import { ensureWorksheetContentTypes } from './lib/export/workbook-package';
 import { buildEvidenceRows, groupStartIndexes } from './lib/ui/results';
 
 type RowStatus = 'ready' | 'looking' | 'found' | 'inferred' | 'review' | 'skipped' | 'error';
@@ -368,31 +370,19 @@ export default function Home() {
     try {
       const { default: XlsxPopulate } = await import('xlsx-populate/browser/xlsx-populate');
       const workbook = await XlsxPopulate.fromDataAsync(originalBuffer.current.slice(0));
-      const resultRows = buildSpecResultRows(records.map((record) => ({ ...record, sourceSheet: record.sheetName, sourceRow: record.rowNumber })));
-      const reviewRows = buildReviewRows(records.map((record) => ({ ...record, sourceSheet: record.sheetName, sourceRow: record.rowNumber })));
-      const uniqueSheetName = (base: string) => workbook.sheet(base) ? `${base} - Generated` : base;
-      const writeSheet = (name: string, rowObjects: Array<Record<string, string | number | boolean>>, fallbackHeaders: string[]) => {
-        const sheet = workbook.addSheet(uniqueSheetName(name));
-        const headers = rowObjects.length ? Object.keys(rowObjects[0]) : fallbackHeaders;
-        const values = rowObjects.map((row) => headers.map((header) => row[header] ?? ''));
-        sheet.cell('A1').value([headers, ...values]);
-        sheet.range(1, 1, 1, headers.length).style({ bold: true, fontColor: 'FFFFFF', fill: '173D83', verticalAlignment: 'center', wrapText: true });
-        if (values.length) sheet.range(2, 1, values.length + 1, headers.length).style({ verticalAlignment: 'top', wrapText: true, fontSize: 10 });
-        headers.forEach((header, index) => sheet.column(index + 1).width(/Evidence|Reason|Source|Candidate|Specifications/.test(header) ? 42 : 22));
-        sheet.row(1).height(34);
-        sheet.freezePanes(4, 2);
-      };
-      const resultHeaders = resultRows.length ? Object.keys(resultRows[0]) : ['SourceSheet', 'SourceRow', 'Role', 'SerialNumber', 'CPU', 'RAM', 'ValidationStatus'];
-      writeSheet('Spec Results', resultRows, resultHeaders);
-      writeSheet('Review Required', reviewRows, [...resultHeaders, 'RecommendedAction']);
+      const exportDevices = records.map((record) => ({ ...record, sourceSheet: record.sheetName, sourceRow: record.rowNumber }));
+      const resultRows = buildPrimaryResultRows(exportDevices);
+      const reviewRows = buildReviewRows(exportDevices);
+      const evidenceRows = buildExportEvidenceRows(exportDevices);
+      writeResultWorksheets(workbook, { primaryRows: resultRows, reviewRows, evidenceRows });
       const output = await workbook.outputAsync();
-      const blob = output instanceof Blob ? output : new Blob([output]);
+      const blob = await ensureWorksheetContentTypes(output);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `${fileName.replace(/\.xlsx$/i, '')} - HP spec results.xlsx`;
       anchor.click(); URL.revokeObjectURL(url);
-      notify(`Exported ${resultRows.length} device results and ${reviewRows.length} review rows`);
+      notify(`Exported ${resultRows.length} device results, ${reviewRows.length} review rows and full HP evidence`);
     } catch { notify('The result workbook could not be exported'); }
   };
 
