@@ -6,11 +6,15 @@ import {
   createEmptyMoreInfo, defaultHardwareFields, hardwareFieldDefinitions,
   type DeviceMoreInfo, type HardwareFieldKey,
 } from './lib/device-fields';
+import { detectWorkbookLayout, normalizeSerial } from './lib/workbook/detector';
+import { normalizeDevices } from './lib/workbook/normalizer';
+import type { LayoutAnalysis, WorkbookProfile } from './lib/workbook/types';
+import { LookupQueue } from './lib/lookup/queue';
 
 type RowStatus = 'ready' | 'looking' | 'found' | 'inferred' | 'review' | 'skipped' | 'error';
 type ActiveView = 'specs' | 'more' | 'validation' | 'fields' | 'data' | 'settings';
 type ValidationStatus = 'supported' | 'review' | 'unavailable' | 'pending';
-type ValidationCheck = { key: string; label: string; status: 'pass' | 'review'; detail: string };
+type ValidationCheck = { key: string; label: string; status: 'pass' | 'review' | 'fail'; detail: string };
 
 type SheetRecord = {
   id: string;
@@ -19,6 +23,10 @@ type SheetRecord = {
   sheetName: string;
   number: string;
   serialNumber: string;
+  role: string;
+  sourceGroupKey: string;
+  modelHint: string;
+  productNumberHint: string;
   asset: string;
   description: string;
   existingCpu: string;
@@ -45,6 +53,18 @@ type SheetRecord = {
   lookupCountry: string;
   lookedUpAt: string;
   unitConfigurationCount: number;
+  specifications: Array<{
+    category: string;
+    field: string;
+    normalizedValue: string;
+    hpDescription: string;
+    hpPartNumber: string;
+    evidenceType: string;
+    serialSpecific: boolean;
+    evidence: Array<{ hpDescription: string; hpPartNumber: string; quantity: string; evidenceType: string; serialSpecific: boolean }>;
+    reviewReason?: string;
+  }>;
+  resolution?: { status: string; matchMethod: string; reason: string; candidateCount: number; candidates: Array<{ productNumber: string; productName: string; serialNumber: string }> };
   moreInfo: DeviceMoreInfo;
   status: RowStatus;
   error?: string;
@@ -71,6 +91,9 @@ type HpResponse = {
   lookupCountry: string;
   lookedUpAt: string;
   unitConfigurationCount: number;
+  validationStatusLabel?: 'VERIFIED' | 'REVIEW REQUIRED' | 'UNRESOLVED';
+  specifications?: SheetRecord['specifications'];
+  resolution?: SheetRecord['resolution'];
   error?: string;
 };
 
@@ -81,7 +104,6 @@ type RunSummary = {
   finishedAt: string;
 };
 
-const serialHeaders = ['serialno', 'serialnumber', 'deviceserial', 'deviceserialnumber', 'serial', 'servicetag', 'sn', 'serialid'];
 const cpuHeaders = ['cpu', 'processor', 'processormodel', 'processorname', 'cpuspec', 'cpuspecification'];
 const ramHeaders = ['ram', 'memory', 'systemmemory', 'installedmemory', 'memorysize', 'ramspec', 'ramspecification'];
 const verifiedCpuHeaders = ['verifiedcpu', 'correctedcpu', 'hpcpu', 'lookedupcpu'];
@@ -102,8 +124,6 @@ function validationLabel(status: ValidationStatus) {
 }
 
 const infoText = (values: string[]) => values.length ? values.join(' · ') : 'Not listed by HP';
-const delay = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-
 export default function Home() {
   const [records, setRecords] = useState<SheetRecord[]>([]);
   const [activeView, setActiveView] = useState<ActiveView>('specs');
@@ -118,9 +138,12 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [toast, setToast] = useState('');
   const [detailRecordId, setDetailRecordId] = useState<string | null>(null);
+  const [layoutAnalysis, setLayoutAnalysis] = useState<LayoutAnalysis | null>(null);
+  const [layoutConfirmed, setLayoutConfirmed] = useState(true);
+  const [lookupPaused, setLookupPaused] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const originalBuffer = useRef<ArrayBuffer | null>(null);
-  const stopRequested = useRef(false);
+  const lookupQueue = useRef<LookupQueue<HpResponse> | null>(null);
 
   const notify = (message: string) => {
     setToast(message);
@@ -132,7 +155,8 @@ export default function Home() {
     try {
       const { default: XlsxPopulate } = await import('xlsx-populate/browser/xlsx-populate');
       const workbook = await XlsxPopulate.fromDataAsync(buffer.slice(0));
-      const found: SheetRecord[] = [];
+      const profile: WorkbookProfile = { sheets: [] };
+      const sheetMeta = new Map<string, { matrix: unknown[][]; startRow: number; startColumn: number; lastContentColumn: number }>();
       for (const sheet of workbook.sheets()) {
         const usedRange = sheet.usedRange();
         if (!usedRange) continue;
@@ -140,59 +164,58 @@ export default function Home() {
         if (!Array.isArray(matrix)) continue;
         const rangeStartRow = usedRange.startCell().rowNumber();
         const rangeStartColumn = usedRange.startCell().columnNumber();
-        const headerIndex = matrix.slice(0, 40).findIndex((row: unknown[]) =>
-          Array.isArray(row) && row.some((cell) => serialHeaders.includes(normalizeKey(cell))),
-        );
-        if (headerIndex < 0) continue;
-        const headers = matrix[headerIndex].map(normalizeKey);
-        const serialMatch = headers.findIndex((header: string) => serialHeaders.includes(header));
-        const cpuMatch = headers.findIndex((header: string) => cpuHeaders.includes(header));
-        const ramMatch = headers.findIndex((header: string) => ramHeaders.includes(header));
-        const serialColumn = rangeStartColumn - 1 + serialMatch;
-        const cpuColumn = cpuMatch >= 0 ? rangeStartColumn - 1 + cpuMatch : -1;
-        const ramColumn = ramMatch >= 0 ? rangeStartColumn - 1 + ramMatch : -1;
         const lastContentColumn = matrix.reduce((last: number, row: unknown[]) => {
           if (!Array.isArray(row)) return last;
           for (let column = row.length - 1; column >= 0; column -= 1) {
             if (text(row[column])) return Math.max(last, rangeStartColumn - 1 + column);
           }
           return last;
-        }, Math.max(rangeStartColumn + headers.length - 2, serialColumn));
-        const numberColumn = headers.findIndex((header: string) => header === 'no' || header === 'number');
-        const assetColumn = headers.findIndex((header: string) => header === 'asset' || header === 'assest');
-        const descriptionColumn = headers.findIndex((header: string) => header === 'assetdescription' || header === 'assestdescription' || header === 'description');
-        matrix.slice(headerIndex + 1).forEach((row: unknown[], rowOffset: number) => {
-          const serialNumber = text(row[serialMatch]).toUpperCase();
-          if (!serialNumber) return;
-          const description = descriptionColumn >= 0 ? text(row[descriptionColumn]) : '';
-          found.push({
-            id: `${sheet.name()}:${rangeStartRow + headerIndex + rowOffset + 1}`,
-            rowNumber: rangeStartRow + headerIndex + rowOffset + 1,
-            headerRow: rangeStartRow + headerIndex,
-            sheetName: sheet.name(),
-            number: numberColumn >= 0 ? text(row[numberColumn]) : String(rowOffset + 1),
-            serialNumber,
-            asset: assetColumn >= 0 ? text(row[assetColumn]) : '',
-            description,
-            existingCpu: cpuMatch >= 0 ? text(row[cpuMatch]) : '',
-            existingRam: ramMatch >= 0 ? text(row[ramMatch]) : '',
-            cpuColumn, ramColumn, serialColumn, lastContentColumn,
-            cpu: '', ram: '', productName: '', productNumber: '', cpuSource: '', ramSource: '',
-            cpuEvidence: [], ramEvidence: [], validationStatus: 'pending', validationChecks: [],
-            validationSummary: '', parserVersion: '', manuallyReviewed: false,
-            reviewReason: '', sourceUrl: '', lookupCountry: '', lookedUpAt: '', unitConfigurationCount: 0,
-            moreInfo: createEmptyMoreInfo(),
-            status: /monitor|display/i.test(description) ? 'skipped' : 'ready',
-          });
-        });
+        }, rangeStartColumn - 1);
+        const rows = matrix.map((row: unknown) => Array.isArray(row) ? row : []);
+        profile.sheets.push({ name: sheet.name(), rows });
+        sheetMeta.set(sheet.name(), { matrix: rows, startRow: rangeStartRow, startColumn: rangeStartColumn, lastContentColumn });
       }
-      if (!found.length) throw new Error('No Serial No column was found');
+      const analysis = detectWorkbookLayout(profile);
+      if (!analysis.mappings.length) throw new Error('No reliable serial number column was found. Add a Serial Number heading and try again.');
+      const devices = normalizeDevices(profile, analysis);
+      const found: SheetRecord[] = devices.map((device) => {
+        const mapping = analysis.mappings.find((candidate) => candidate.sheetName === device.sourceSheet
+          && candidate.serialColumnIndex === device.serialColumn && candidate.role === device.role)!;
+        const meta = sheetMeta.get(device.sourceSheet)!;
+        const row = meta.matrix[device.sourceRow - 1] ?? [];
+        const headers = (meta.matrix[mapping.headerRowIndex] ?? []).map(normalizeKey);
+        const numberColumn = headers.findIndex((header) => header === 'no' || header === 'number');
+        const descriptionColumn = headers.findIndex((header) => ['assetdescription', 'assestdescription', 'description', 'devicedescription'].includes(header));
+        const rowNumber = meta.startRow + device.sourceRow - 1;
+        const description = device.modelHint || (descriptionColumn >= 0 ? text(row[descriptionColumn]) : '') || device.deviceTypeHint || '';
+        return {
+          id: device.id, rowNumber, headerRow: meta.startRow + mapping.headerRowIndex,
+          sheetName: device.sourceSheet, number: numberColumn >= 0 ? text(row[numberColumn]) : String(device.sourceRow - mapping.headerRowIndex - 1),
+          serialNumber: device.normalizedSerial, role: device.role, sourceGroupKey: device.sourceGroupKey,
+          modelHint: device.modelHint ?? '', productNumberHint: device.productNumberHint ?? '',
+          asset: device.assetHint ?? '', description,
+          existingCpu: mapping.cpuColumnIndex !== undefined ? text(row[mapping.cpuColumnIndex]) : '',
+          existingRam: mapping.ramColumnIndex !== undefined ? text(row[mapping.ramColumnIndex]) : '',
+          cpuColumn: mapping.cpuColumnIndex !== undefined ? meta.startColumn - 1 + mapping.cpuColumnIndex : -1,
+          ramColumn: mapping.ramColumnIndex !== undefined ? meta.startColumn - 1 + mapping.ramColumnIndex : -1,
+          serialColumn: meta.startColumn - 1 + mapping.serialColumnIndex, lastContentColumn: meta.lastContentColumn,
+          cpu: '', ram: '', productName: '', productNumber: '', cpuSource: '', ramSource: '',
+          cpuEvidence: [], ramEvidence: [], validationStatus: 'pending' as const, validationChecks: [],
+          validationSummary: '', parserVersion: '', manuallyReviewed: false,
+          reviewReason: '', sourceUrl: '', lookupCountry: '', lookedUpAt: '', unitConfigurationCount: 0,
+          specifications: [], moreInfo: createEmptyMoreInfo(),
+          status: /monitor|display/i.test(`${description} ${device.deviceTypeHint ?? ''}`) ? 'skipped' as const : 'ready' as const,
+        };
+      });
+      if (!found.length) throw new Error('Serial columns were detected, but no valid device serial values were found.');
       originalBuffer.current = buffer.slice(0);
       setRecords(found);
+      setLayoutAnalysis(analysis);
+      setLayoutConfirmed(!analysis.needsConfirmation);
       setFileName(name);
       setProcessed(0);
       setRunSummary({ uniqueLookups: 0, duplicateRows: 0, retries: 0, finishedAt: '' });
-      notify(`${found.length} serial numbers detected`);
+      notify(`${found.length} device serials detected across ${analysis.mappings.length} column${analysis.mappings.length === 1 ? '' : 's'}`);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Unable to read this workbook');
     } finally {
@@ -249,85 +272,73 @@ export default function Home() {
 
   const runLookup = async () => {
     if (!records.length || running) return;
-    stopRequested.current = false;
+    if (!layoutConfirmed) { notify('Confirm the detected workbook mapping before lookup'); return; }
     setRunning(true); setProcessed(0);
-    const queue = records.filter((record) => record.status !== 'skipped');
-    const uniqueSerials = new Set(queue.map((record) => record.serialNumber));
-    const lookupCache = new Map<string, Promise<HpResponse>>();
-    let retryCount = 0;
-    const fetchWithRetry = async (serialNumber: string) => {
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
+    setLookupPaused(false);
+    const eligible = records.filter((record) => record.status !== 'skipped');
+    setRecords((current) => current.map((record) => record.status === 'skipped' ? record : { ...record, status: 'looking', error: '' }));
+    const queue = new LookupQueue<HpResponse>({
+      items: eligible.map((record) => ({ serialNumber: record.serialNumber, normalizedSerial: normalizeSerial(record.serialNumber) })),
+      concurrency: 3,
+      maxAttempts: 3,
+      onProgress: (latest) => setProcessed(Math.min(eligible.length, latest.completed + latest.duplicatesReused)),
+      lookup: async (serialNumber, signal) => {
+        const hint = eligible.find((record) => normalizeSerial(record.serialNumber) === normalizeSerial(serialNumber));
         try {
           const response = await fetch('/api/hp-lookup', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ serial: serialNumber }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+            body: JSON.stringify({ serial: serialNumber, modelHint: hint?.modelHint, productNumberHint: hint?.productNumberHint }),
           });
           const data = await response.json() as HpResponse;
-          if (response.ok) return data;
-          if ((response.status === 429 || response.status >= 500) && attempt < 3) {
-            retryCount += 1;
-            await delay(450 * attempt);
-            continue;
+          if (!response.ok) {
+            const error = Object.assign(new Error(data.error || 'Lookup failed'), { transient: response.status === 429 || response.status >= 500 });
+            throw error;
           }
-          throw new Error(data.error || 'Lookup failed');
+          return data;
         } catch (error) {
-          if (attempt < 3 && error instanceof TypeError) {
-            retryCount += 1;
-            await delay(450 * attempt);
-            continue;
-          }
+          if (error instanceof TypeError) Object.assign(error, { transient: true });
           throw error;
         }
+      },
+    });
+    lookupQueue.current = queue;
+    const results = await queue.start();
+    setRecords((current) => current.map((record) => {
+      if (record.status === 'skipped') return record;
+      const outcome = results.get(normalizeSerial(record.serialNumber));
+      if (!outcome || outcome.status === 'error' || !outcome.data) {
+        return { ...record, status: 'error', validationStatus: 'unavailable', error: outcome?.error ?? 'Lookup failed' };
       }
-      throw new Error('Lookup failed after three attempts');
-    };
-    const lookupSerial = (serialNumber: string) => {
-      const cached = lookupCache.get(serialNumber);
-      if (cached) return cached;
-      const request = fetchWithRetry(serialNumber);
-      lookupCache.set(serialNumber, request);
-      return request;
-    };
-    let cursor = 0;
-    const worker = async () => {
-      while (!stopRequested.current) {
-        const target = queue[cursor++];
-        if (!target) break;
-        updateRecord(target.id, { status: 'looking', error: '' });
-        try {
-          const data = await lookupSerial(target.serialNumber);
-          const status: RowStatus = !data.found || data.cpuSource === 'not-listed' || ['spare-bom-review', 'not-listed'].includes(data.ramSource)
-            ? 'review' : data.ramSource === 'spare-bom' ? 'inferred' : 'found';
-          updateRecord(target.id, {
-            cpu: data.cpu, ram: data.ram, cpuSource: data.cpuSource, ramSource: data.ramSource,
-            cpuEvidence: data.cpuEvidence ?? [], ramEvidence: data.ramEvidence ?? [],
-            validationStatus: data.validationStatus, validationChecks: data.validationChecks ?? [],
-            validationSummary: data.validationSummary, parserVersion: data.parserVersion, manuallyReviewed: false,
-            productName: data.productName, productNumber: data.productNumber, status,
-            reviewReason: data.reviewReason ?? '', sourceUrl: data.sourceUrl,
-            lookupCountry: data.lookupCountry, lookedUpAt: data.lookedUpAt,
-            unitConfigurationCount: data.unitConfigurationCount,
-            moreInfo: data.moreInfo ?? createEmptyMoreInfo(), error: '',
-          });
-        } catch (error) {
-          updateRecord(target.id, { status: 'error', error: error instanceof Error ? error.message : 'Lookup failed' });
-        } finally {
-          setProcessed((value) => value + 1);
-        }
-      }
-    };
-    await Promise.all([worker(), worker(), worker()]);
+      const data = outcome.data;
+      const status: RowStatus = data.validationStatusLabel === 'UNRESOLVED' || !data.found || data.cpuSource === 'not-listed'
+        || ['spare-bom-review', 'not-listed'].includes(data.ramSource) ? 'review'
+        : data.ramSource === 'spare-bom' ? 'inferred' : 'found';
+      return {
+        ...record, cpu: data.cpu, ram: data.ram, cpuSource: data.cpuSource, ramSource: data.ramSource,
+        cpuEvidence: data.cpuEvidence ?? [], ramEvidence: data.ramEvidence ?? [],
+        validationStatus: data.validationStatus, validationChecks: data.validationChecks ?? [],
+        validationSummary: data.validationSummary, parserVersion: data.parserVersion, manuallyReviewed: false,
+        productName: data.productName, productNumber: data.productNumber, status,
+        reviewReason: data.reviewReason ?? '', sourceUrl: data.sourceUrl,
+        lookupCountry: data.lookupCountry, lookedUpAt: data.lookedUpAt,
+        unitConfigurationCount: data.unitConfigurationCount, specifications: data.specifications ?? [],
+        resolution: data.resolution, moreInfo: data.moreInfo ?? createEmptyMoreInfo(), error: '',
+      };
+    }));
     setRunSummary({
-      uniqueLookups: lookupCache.size,
-      duplicateRows: Math.max(0, queue.length - uniqueSerials.size),
-      retries: retryCount,
+      uniqueLookups: queue.progress.uniqueRequests,
+      duplicateRows: queue.progress.duplicatesReused,
+      retries: queue.progress.retries,
       finishedAt: new Date().toISOString(),
     });
+    lookupQueue.current = null;
     setRunning(false);
-    notify(stopRequested.current ? 'Lookup paused' : 'HP lookup completed');
+    setLookupPaused(false);
+    notify('HP lookup completed');
   };
 
-  const stopLookup = () => { stopRequested.current = true; };
+  const pauseLookup = () => { lookupQueue.current?.pause(); setLookupPaused(true); };
+  const resumeLookup = () => { lookupQueue.current?.resume(); setLookupPaused(false); };
 
   const exportWorkbook = async (includeMoreInfo = false) => {
     if (!originalBuffer.current) return;
@@ -557,12 +568,20 @@ export default function Home() {
             <div><span>4</span><p><strong>Export</strong>Original layout plus verified evidence</p></div>
           </section>}
 
+          {records.length > 0 && layoutAnalysis && <section className={`mapping-confirmation ${layoutConfirmed ? 'confirmed' : 'attention'}`}>
+            <div><span>{layoutConfirmed ? '✓' : '!'}</span><p><strong>{layoutAnalysis.mappings.length} device column{layoutAnalysis.mappings.length === 1 ? '' : 's'} detected</strong>{layoutAnalysis.mappings.map((mapping) => `${mapping.sheetName}: ${mapping.role} serial`).join(' · ')}</p></div>
+            {!layoutConfirmed
+              ? <button onClick={() => { setLayoutConfirmed(true); notify('Workbook mapping confirmed'); }}>Confirm mapping</button>
+              : <small>Mapping confirmed for this lookup run</small>}
+          </section>}
+
           {records.length > 0 && (activeView === 'specs' || activeView === 'more' || activeView === 'validation') && (
             <>
               <section className="control-deck">
                 <div className="action-buttons">
                   {!running ? <button className="primary-action" onClick={runLookup}><span>▶</span>{processed ? 'Run lookup again' : 'Start HP lookup'}</button>
-                    : <button className="stop-action" onClick={stopLookup}><span>■</span>Pause lookup</button>}
+                    : lookupPaused ? <button className="primary-action" onClick={resumeLookup}><span>▶</span>Resume lookup</button>
+                      : <button className="stop-action" onClick={pauseLookup}><span>Ⅱ</span>Pause lookup</button>}
                   {activeView === 'specs' && <button className="secondary-action" onClick={copyResults}>Copy CPU & RAM</button>}
                   <button className="export-action" onClick={() => exportWorkbook(activeView !== 'specs')} disabled={!completed && !reviewCount}>
                     {activeView === 'validation' ? 'Export validation report' : activeView === 'more' ? 'Export more info' : 'Export enriched Excel'} <span>↓</span>
