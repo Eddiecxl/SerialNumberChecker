@@ -288,6 +288,15 @@ body { font-size:14px; -webkit-font-smoothing:antialiased; text-rendering:optimi
 .workflow-strip>div>span { width:28px; height:28px; font-size:11px; }
 .workflow-strip p { font-size:10.5px; }
 .workflow-strip strong { font-size:11.5px; }
+.mapping-confirmation { display:flex; justify-content:space-between; align-items:center; gap:18px; margin:12px 0; padding:14px 17px; border:1px solid #d7e2ef; border-radius:13px; background:#f8fbff; box-shadow:0 8px 24px rgba(31,48,75,.035); }
+.mapping-confirmation>div { display:flex; align-items:center; gap:11px; min-width:0; }
+.mapping-confirmation>div>span { flex:0 0 auto; width:28px; height:28px; display:grid; place-items:center; border-radius:8px; background:#dff4ee; color:#087c68; font-size:13px; font-weight:850; }
+.mapping-confirmation p { margin:0; color:#68778c; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.mapping-confirmation p strong { display:block; color:#263750; font-size:12px; }
+.mapping-confirmation small { color:#6c7a8d; font-size:10px; }
+.mapping-confirmation.attention { border-color:#efcf98; background:#fffaf1; }
+.mapping-confirmation.attention>div>span { background:#ffead0; color:#a86708; }
+.mapping-confirmation button { flex:0 0 auto; border:0; border-radius:9px; padding:10px 14px; background:#173d83; color:#fff; font-size:11px; font-weight:750; cursor:pointer; }
 .control-deck { padding:21px 24px; border-radius:16px; }
 .action-buttons button { height:44px; padding:0 18px; border-radius:10px; font-size:12px; }
 .progress-block>div:first-child { font-size:11px; }
@@ -314,8 +323,10 @@ td { padding:13px; font-size:12px; line-height:1.5; }
 tbody tr:hover td { background:#fff; }
 tbody tr:hover td:first-child { box-shadow:inset 3px 0 0 #6f95ec; }
 tbody tr.row-loading td { background:#f4f7ff; }
+tbody tr.group-start td { border-top:2px solid #c9d8ed; }
 .row-number { font-size:11px; }
 .serial-value { font-size:12px; }
+.role-badge { display:inline-flex; margin-bottom:6px; border:1px solid #cbdaf1; border-radius:999px; padding:3px 7px; background:#edf3ff; color:#315eaf; font-size:8px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
 td small { margin-top:5px; font-size:10px; }
 .existing-cell span { font-size:10.5px; }
 .result-input { height:38px; padding:0 11px; border-radius:8px; font-size:11.5px; }
@@ -400,10 +411,18 @@ footer { font-size:10px; }
 .modal-check-grid>div>span { flex:0 0 auto; width:20px; height:20px; display:grid; place-items:center; border-radius:50%; font-size:9px; font-weight:800; }
 .modal-check-grid>div.pass>span { background:#dff4ee; color:#07856e; }
 .modal-check-grid>div.review>span { background:#ffead0; color:#a86708; }
+.modal-check-grid>div.fail>span { background:#ffe2e2; color:#ad3232; }
 .modal-check-grid p { margin:0; color:#718095; font-size:10px; line-height:1.5; }
 .modal-check-grid p strong { display:block; margin-bottom:2px; color:#35465e; font-size:11px; }
 .record-modal-footer { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:16px 28px; border-top:1px solid #dce3eb; background:#fff; }
 .record-modal-footer>div { display:flex; gap:17px; color:#7e8a9b; font-size:10px; }
+.evidence-row-list { display:grid; gap:7px; }
+.evidence-row-list>div { display:grid; grid-template-columns:76px minmax(0,1fr) 120px 105px; align-items:start; gap:12px; padding:11px 12px; border:1px solid #e0e7ef; border-radius:9px; background:#f8fafc; }
+.evidence-row-list>div>span { color:#315eaf; font-size:9px; font-weight:850; letter-spacing:.06em; }
+.evidence-row-list p { margin:0; color:#4a5a70; font-size:10.5px; line-height:1.45; }
+.evidence-row-list p strong { display:block; color:#263750; font-size:11px; }
+.evidence-row-list code { color:#53647b; font-size:10px; overflow-wrap:anywhere; }
+.evidence-row-list i { color:#79879a; font-size:9px; font-style:normal; text-transform:uppercase; }
 .modal-source-button { border-radius:9px; padding:10px 14px; background:#10213f; color:#fff; font-size:11px; font-weight:750; text-decoration:none; }
 @keyframes modal-fade { from { opacity:0; } }
 @keyframes modal-rise { from { opacity:0; transform:translateY(12px) scale(.985); } }
@@ -428,6 +447,8 @@ footer { font-size:10px; }
 }
 
 @media (max-width:900px) {
+  .mapping-confirmation { align-items:flex-start; flex-direction:column; }
+  .evidence-row-list>div { grid-template-columns:1fr; gap:5px; }
   .table-scroll { max-height:none; overflow:visible; }
   table,table.more-table,tbody,tr,td { display:block; width:100%; }
   thead { display:none; }

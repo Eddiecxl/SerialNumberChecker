@@ -1,7 +1,6 @@
 'use client';
 
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { Cell as XlsxCell } from 'xlsx-populate/browser/xlsx-populate';
 import {
   createEmptyMoreInfo, defaultHardwareFields, hardwareFieldDefinitions,
   type DeviceMoreInfo, type HardwareFieldKey,
@@ -10,6 +9,8 @@ import { detectWorkbookLayout, normalizeSerial } from './lib/workbook/detector';
 import { normalizeDevices } from './lib/workbook/normalizer';
 import type { LayoutAnalysis, WorkbookProfile } from './lib/workbook/types';
 import { LookupQueue } from './lib/lookup/queue';
+import { buildReviewRows, buildSpecResultRows } from './lib/export/results';
+import { buildEvidenceRows, groupStartIndexes } from './lib/ui/results';
 
 type RowStatus = 'ready' | 'looking' | 'found' | 'inferred' | 'review' | 'skipped' | 'error';
 type ActiveView = 'specs' | 'more' | 'validation' | 'fields' | 'data' | 'settings';
@@ -104,11 +105,6 @@ type RunSummary = {
   finishedAt: string;
 };
 
-const cpuHeaders = ['cpu', 'processor', 'processormodel', 'processorname', 'cpuspec', 'cpuspecification'];
-const ramHeaders = ['ram', 'memory', 'systemmemory', 'installedmemory', 'memorysize', 'ramspec', 'ramspecification'];
-const verifiedCpuHeaders = ['verifiedcpu', 'correctedcpu', 'hpcpu', 'lookedupcpu'];
-const verifiedRamHeaders = ['verifiedram', 'correctedram', 'hpram', 'lookedupram'];
-const reviewHeaders = ['reviewreason', 'lookupreason', 'verificationreason', 'specificationreview'];
 const normalizeKey = (value: unknown) => String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const text = (value: unknown) => value === null || value === undefined ? '' : String(value).trim();
 
@@ -340,130 +336,38 @@ export default function Home() {
   const pauseLookup = () => { lookupQueue.current?.pause(); setLookupPaused(true); };
   const resumeLookup = () => { lookupQueue.current?.resume(); setLookupPaused(false); };
 
-  const exportWorkbook = async (includeMoreInfo = false) => {
+  const exportWorkbook = async () => {
     if (!originalBuffer.current) return;
-    const enriched = records.filter((record) => record.cpu || record.ram);
-    if (!enriched.length) { notify('Run the HP lookup first'); return; }
+    if (!records.some((record) => record.status !== 'ready' && record.status !== 'looking')) { notify('Run the HP lookup first'); return; }
     try {
       const { default: XlsxPopulate } = await import('xlsx-populate/browser/xlsx-populate');
       const workbook = await XlsxPopulate.fromDataAsync(originalBuffer.current.slice(0));
-      const styleNames = ['fill', 'fontColor', 'bold', 'italic', 'fontSize', 'fontFamily', 'horizontalAlignment', 'verticalAlignment', 'wrapText', 'numberFormat', 'border'];
-      const copyStyle = (source: XlsxCell, target: XlsxCell) => {
-        const style: Record<string, unknown> = {};
-        styleNames.forEach((name) => {
-          const value = source.style(name);
-          if (value !== undefined && value !== null) style[name] = value;
-        });
-        target.style(style);
+      const resultRows = buildSpecResultRows(records.map((record) => ({ ...record, sourceSheet: record.sheetName, sourceRow: record.rowNumber })));
+      const reviewRows = buildReviewRows(records.map((record) => ({ ...record, sourceSheet: record.sheetName, sourceRow: record.rowNumber })));
+      const uniqueSheetName = (base: string) => workbook.sheet(base) ? `${base} - Generated` : base;
+      const writeSheet = (name: string, rowObjects: Array<Record<string, string | number | boolean>>, fallbackHeaders: string[]) => {
+        const sheet = workbook.addSheet(uniqueSheetName(name));
+        const headers = rowObjects.length ? Object.keys(rowObjects[0]) : fallbackHeaders;
+        const values = rowObjects.map((row) => headers.map((header) => row[header] ?? ''));
+        sheet.cell('A1').value([headers, ...values]);
+        sheet.range(1, 1, 1, headers.length).style({ bold: true, fontColor: 'FFFFFF', fill: '173D83', verticalAlignment: 'center', wrapText: true });
+        if (values.length) sheet.range(2, 1, values.length + 1, headers.length).style({ verticalAlignment: 'top', wrapText: true, fontSize: 10 });
+        headers.forEach((header, index) => sheet.column(index + 1).width(/Evidence|Reason|Source|Candidate|Specifications/.test(header) ? 42 : 22));
+        sheet.row(1).height(34);
+        sheet.freezePanes(4, 2);
       };
-      const rowsBySheet = new Map<string, SheetRecord[]>();
-      enriched.forEach((record) => rowsBySheet.set(record.sheetName, [...(rowsBySheet.get(record.sheetName) ?? []), record]));
-
-      rowsBySheet.forEach((sheetRecords, sheetName) => {
-        const sheet = workbook.sheet(sheetName);
-        if (!sheet) return;
-        const sample = sheetRecords[0];
-        const usedRange = sheet.usedRange();
-        if (!usedRange) return;
-        const rangeStartRow = usedRange.startCell().rowNumber();
-        const rangeStartColumn = usedRange.startCell().columnNumber();
-        const headerValues = (usedRange.value()?.[sample.headerRow - rangeStartRow] ?? []) as unknown[];
-        const normalizedHeaders = headerValues.map(normalizeKey);
-        let nextColumn = Math.max(sample.lastContentColumn + 2, rangeStartColumn + headerValues.length);
-        const headerTemplateColumn = sample.serialColumn + 1;
-        const findHeaderColumn = (aliases: string[]) => {
-          const match = normalizedHeaders.findIndex((header: string) => aliases.includes(header));
-          return match >= 0 ? rangeStartColumn + match : 0;
-        };
-        const ensureColumn = (aliases: string[], label: string) => {
-          const existingColumn = findHeaderColumn(aliases);
-          if (existingColumn > 0) return existingColumn;
-          const column = nextColumn++;
-          const headerCell = sheet.cell(sample.headerRow, column);
-          headerCell.value(label);
-          copyStyle(sheet.cell(sample.headerRow, headerTemplateColumn), headerCell);
-          sheetRecords.forEach((record) => copyStyle(sheet.cell(record.rowNumber, headerTemplateColumn), sheet.cell(record.rowNumber, column)));
-          normalizedHeaders[column - rangeStartColumn] = normalizeKey(label);
-          return column;
-        };
-
-        const cpuColumn = sample.cpuColumn >= 0 ? sample.cpuColumn + 1 : ensureColumn(cpuHeaders, 'CPU');
-        const ramColumn = sample.ramColumn >= 0 ? sample.ramColumn + 1 : ensureColumn(ramHeaders, 'RAM');
-        const needsVerifiedCpu = sheetRecords.some((record) => Boolean(record.existingCpu && record.cpu));
-        const needsVerifiedRam = sheetRecords.some((record) => Boolean(record.existingRam && record.ram));
-        const needsReview = sheetRecords.some((record) => Boolean(record.reviewReason || record.existingCpu || record.existingRam));
-        const verifiedCpuColumn = needsVerifiedCpu ? ensureColumn(verifiedCpuHeaders, 'Verified CPU') : 0;
-        const verifiedRamColumn = needsVerifiedRam ? ensureColumn(verifiedRamHeaders, 'Verified RAM') : 0;
-        const reviewColumn = needsReview ? ensureColumn(reviewHeaders, 'Review reason') : 0;
-
-        sheetRecords.forEach((record) => {
-          if (record.cpu) sheet.cell(record.rowNumber, record.existingCpu ? verifiedCpuColumn : cpuColumn).value(record.cpu);
-          if (record.ram) sheet.cell(record.rowNumber, record.existingRam ? verifiedRamColumn : ramColumn).value(record.ram);
-          if (reviewColumn) {
-            const reasons = [record.reviewReason];
-            if (record.existingCpu) reasons.push('Existing CPU preserved; HP lookup result is in Verified CPU.');
-            if (record.existingRam) reasons.push('Existing RAM preserved; HP lookup result is in Verified RAM.');
-            sheet.cell(record.rowNumber, reviewColumn).value(reasons.filter(Boolean).join(' '));
-          }
-        });
-      });
-      if (includeMoreInfo) {
-        const sheetName = 'More Device Info';
-        let infoSheet = workbook.sheet(sheetName);
-        if (!infoSheet) infoSheet = workbook.addSheet(sheetName);
-        else infoSheet.usedRange()?.clear();
-        const exportFields = hardwareFieldDefinitions.filter(({ key }) => selectedFields.includes(key));
-        const headers = [
-          'No.', 'Serial no', 'Product number', 'Product name', 'Asset description', 'CPU', 'RAM',
-          'Confidence', 'CPU classification', 'RAM classification', 'CPU raw HP evidence', 'RAM raw HP evidence',
-          'Automated validation', 'Validation checks', 'Manual review', 'Parser version',
-          ...exportFields.map(({ exportLabel }) => exportLabel),
-          'Build ID', 'Feature byte', 'MAC address', 'Manufacture date', 'UUID', 'RoHS status',
-          'Serial configuration item count', 'Installed configuration items', 'Compatible spare-parts count',
-          'Review reason', 'Lookup country', 'Lookup time', 'HP PartSurfer page',
-        ];
-        const rows = records.map((record) => {
-          const info = record.moreInfo;
-          const join = (values: string[]) => values.join(' | ');
-          return [
-            record.number, record.serialNumber, record.productNumber, record.productName || record.description,
-            record.description, record.cpu, record.ram, statusLabel(record.status), record.cpuSource, record.ramSource,
-            join(record.cpuEvidence), join(record.ramEvidence), record.validationSummary,
-            record.validationChecks.map((check) => `${check.status.toUpperCase()}: ${check.label} — ${check.detail}`).join(' | '),
-            record.manuallyReviewed ? 'Checked by user in Serial Spec' : 'Not checked', record.parserVersion,
-            ...exportFields.map(({ key }) => join(info[key])),
-            info.buildId, info.featureByte, info.macAddress, info.manufactureDate, info.uuid, info.rohsStatus,
-            record.unitConfigurationCount || '',
-            info.configurationItems.map((item) => `${item.partNumber}: ${item.description}${item.quantity ? ` × ${item.quantity}` : ''}`).join(' | '),
-            info.sparePartCount || '', record.reviewReason, record.lookupCountry,
-            record.lookedUpAt ? new Date(record.lookedUpAt).toLocaleString('en-MY') : '', record.sourceUrl,
-          ];
-        });
-        infoSheet.cell('A1').value([headers, ...rows]);
-        infoSheet.range(1, 1, 1, headers.length).style({
-          bold: true, fontColor: 'FFFFFF', fill: '173D83', verticalAlignment: 'center', wrapText: true,
-        });
-        infoSheet.range(2, 1, rows.length + 1, headers.length).style({
-          verticalAlignment: 'top', wrapText: true, fontSize: 9,
-        });
-        headers.forEach((header, index) => {
-          const width = header === 'Installed configuration items' ? 60
-            : header === 'Review reason' || header === 'HP PartSurfer page' || header.includes('raw HP evidence') || header === 'Validation checks' ? 44
-              : ['No.', 'Confidence', 'CPU evidence', 'RAM evidence'].includes(header) ? 14 : 24;
-          infoSheet.column(index + 1).width(width);
-        });
-        infoSheet.row(1).height(32);
-        infoSheet.freezePanes(1, 2);
-      }
+      const resultHeaders = resultRows.length ? Object.keys(resultRows[0]) : ['SourceSheet', 'SourceRow', 'Role', 'SerialNumber', 'CPU', 'RAM', 'ValidationStatus'];
+      writeSheet('Spec Results', resultRows, resultHeaders);
+      writeSheet('Review Required', reviewRows, [...resultHeaders, 'RecommendedAction']);
       const output = await workbook.outputAsync();
       const blob = output instanceof Blob ? output : new Blob([output]);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `${fileName.replace(/\.xlsx$/i, '')}${includeMoreInfo ? ' - full device info' : ' - enriched'}.xlsx`;
+      anchor.download = `${fileName.replace(/\.xlsx$/i, '')} - HP spec results.xlsx`;
       anchor.click(); URL.revokeObjectURL(url);
-      notify(includeMoreInfo ? `Exported ${records.length} rows with more device information` : `Exported ${enriched.length} enriched rows`);
-    } catch { notify('The enriched workbook could not be exported'); }
+      notify(`Exported ${resultRows.length} device results and ${reviewRows.length} review rows`);
+    } catch { notify('The result workbook could not be exported'); }
   };
 
   const copyResults = async () => {
@@ -496,10 +400,12 @@ export default function Home() {
   const evidenceReview = records.filter((record) => record.validationStatus === 'review' || record.validationStatus === 'unavailable').length;
   const manuallyReviewed = records.filter((record) => record.manuallyReviewed).length;
   const progress = searchable ? Math.min(100, Math.round((processed / searchable) * 100)) : 0;
-  const sourceMappings = useMemo(() => [...new Map(records.map((record) => [record.sheetName, record])).values()], [records]);
-  const duplicateCount = records.length - new Set(records.map((record) => record.serialNumber)).size;
+  const sourceMappings = useMemo(() => [...new Map(records.map((record) => [`${record.sheetName}:${record.serialColumn}`, record])).values()], [records]);
+  const duplicateCount = records.length - new Set(records.map((record) => normalizeSerial(record.serialNumber))).size;
   const selectedFieldDefinitions = hardwareFieldDefinitions.filter(({ key }) => selectedFields.includes(key));
   const detailRecord = detailRecordId ? records.find((record) => record.id === detailRecordId) ?? null : null;
+  const groupedRowStarts = useMemo(() => groupStartIndexes(filtered), [filtered]);
+  const detailEvidenceRows = detailRecord ? buildEvidenceRows(detailRecord.specifications) : [];
 
   return (
     <main className="app-shell">
@@ -539,7 +445,7 @@ export default function Home() {
                 : activeView === 'fields' ? <><h2>Choose the details<br /><em>your business needs.</em></h2><p>CPU, RAM and lookup evidence are always included. Select the additional HP component groups shown on screen and added to the full-information export.</p></>
                 : activeView === 'data' ? <><h2>Your workbook,<br /><em>detected automatically.</em></h2><p>Place one .xlsx workbook in Base files or replace it here. Serial Spec detects the serial-number heading without changing your source file.</p></>
                 : activeView === 'settings' ? <><h2>A safer path<br /><em>from lookup to export.</em></h2><p>Exact serial data stays separate from inferred compatible parts, and every unresolved result carries a visible review reason.</p></>
-                : <><h2>From serial numbers<br />to <em>ready-to-use specs.</em></h2><p>Load any Excel layout. Serial Spec locates the serial, CPU and RAM headings, fills safe blank cells, and preserves existing values for review.</p></>}
+                : <><h2>From serial numbers<br />to <em>ready-to-use specs.</em></h2><p>Load any Excel layout. Serial Spec detects every device-role column, resolves each serial through HP, and keeps the source workbook unchanged.</p></>}
             </div>
             <div className={`file-card ${dragging ? 'dragging' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={dropExcel}>
               {records.length ? (
@@ -583,8 +489,8 @@ export default function Home() {
                     : lookupPaused ? <button className="primary-action" onClick={resumeLookup}><span>▶</span>Resume lookup</button>
                       : <button className="stop-action" onClick={pauseLookup}><span>Ⅱ</span>Pause lookup</button>}
                   {activeView === 'specs' && <button className="secondary-action" onClick={copyResults}>Copy CPU & RAM</button>}
-                  <button className="export-action" onClick={() => exportWorkbook(activeView !== 'specs')} disabled={!completed && !reviewCount}>
-                    {activeView === 'validation' ? 'Export validation report' : activeView === 'more' ? 'Export more info' : 'Export enriched Excel'} <span>↓</span>
+                  <button className="export-action" onClick={exportWorkbook} disabled={!completed && !reviewCount}>
+                    Export result workbook <span>↓</span>
                   </button>
                 </div>
                 <div className="progress-block">
@@ -602,7 +508,7 @@ export default function Home() {
               </section>
 
               {activeView === 'specs' && <>
-                <div className="export-note"><span>i</span><p><strong>Flexible export</strong> Serial Spec detects CPU and RAM columns wherever they appear. Blank cells are filled directly; existing values remain untouched and HP results plus review reasons are added in safe columns to the right.</p></div>
+                <div className="export-note"><span>i</span><p><strong>Safe normalized export</strong> Your original worksheets remain unchanged. The exported copy adds <strong>Spec Results</strong> with one row per device and <strong>Review Required</strong> for anything needing human validation.</p></div>
                 <section className="results-card">
                 <div className="results-toolbar">
                   <div><span className="section-kicker"><span />DEVICE REGISTER</span><h3>Serial number results</h3></div>
@@ -615,10 +521,10 @@ export default function Home() {
                   <table>
                     <thead><tr><th>No.</th><th>Serial no</th><th>Asset description</th><th>Existing CPU / RAM</th><th>HP CPU result</th><th>HP RAM result</th><th>Status</th><th /></tr></thead>
                     <tbody>
-                      {filtered.map((record) => (
-                        <tr key={record.id} className={record.status === 'looking' ? 'row-loading' : ''}>
+                      {filtered.map((record, index) => (
+                        <tr key={record.id} className={`${record.status === 'looking' ? 'row-loading' : ''} ${groupedRowStarts.has(index) ? 'group-start' : ''}`}>
                           <td className="row-number">{record.number}</td>
-                          <td><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || record.asset}</small></td>
+                          <td><span className="role-badge">{record.role}</span><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || record.asset}</small></td>
                           <td className="description-cell">{record.productName || record.description || '—'}</td>
                           <td className="existing-cell"><span>{record.existingCpu || 'CPU —'}</span><span>{record.existingRam || 'RAM —'}</span></td>
                           <td><input className="result-input" value={record.cpu} onChange={(event) => updateRecord(record.id, { cpu: event.target.value, status: 'review', validationStatus: 'review', manuallyReviewed: false })} placeholder={record.status === 'skipped' ? 'Not applicable' : record.status === 'looking' ? 'Looking up…' : 'Pending lookup'} disabled={record.status === 'skipped' || record.status === 'looking'} /></td>
@@ -634,7 +540,7 @@ export default function Home() {
                 </section>
               </>}
               {activeView === 'more' && <>
-                <div className="export-note"><span>i</span><p><strong>More-info export</strong> The same flexible CPU/RAM placement rules are used, and a new <strong>More Device Info</strong> worksheet is added with available HP details and source links.</p></div>
+                <div className="export-note"><span>i</span><p><strong>Full evidence included</strong> Export adds normalized CPU, RAM, all available component groups, HP descriptions, part numbers, product candidates, validation reasons and source links.</p></div>
                 <section className="results-card more-results">
                   <div className="results-toolbar">
                     <div><span className="section-kicker"><span />HP DEVICE RECORDS</span><h3>More device information</h3></div>
@@ -647,12 +553,12 @@ export default function Home() {
                     <table className="more-table">
                       <thead><tr><th>No.</th><th>Device identity</th><th>CPU</th><th>RAM</th><th>Available device details</th><th>Validation & source</th></tr></thead>
                       <tbody>
-                        {filtered.map((record) => {
+                        {filtered.map((record, index) => {
                           const info = record.moreInfo;
                           const availableFields = selectedFieldDefinitions.filter((field) => info[field.key].length);
-                          return <tr key={record.id}>
+                          return <tr key={record.id} className={groupedRowStarts.has(index) ? 'group-start' : ''}>
                             <td className="row-number">{record.number}</td>
-                            <td><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || 'Product number pending'}</small><span className="device-name">{record.productName || record.description || 'Pending lookup'}</span></td>
+                            <td><span className="role-badge">{record.role}</span><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || 'Product number pending'}</small><span className="device-name">{record.productName || record.description || 'Pending lookup'}</span></td>
                             <td className="primary-spec">{record.cpu || 'Pending lookup'}<small>{record.cpuSource === 'serial-bom' ? 'Installed configuration' : record.cpuSource || ''}</small></td>
                             <td className="primary-spec">{record.ram || 'Pending lookup'}<small>{record.ramSource === 'serial-bom' ? 'Installed configuration' : record.ramSource?.startsWith('spare') ? 'Compatible spare evidence' : record.ramSource || ''}</small></td>
                             <td>
@@ -727,7 +633,7 @@ export default function Home() {
             <div className="data-summary"><div><span>Serial numbers detected</span><strong>{records.length}</strong></div><div><span>Eligible device lookups</span><strong>{searchable}</strong></div><div><span>Duplicate rows reused</span><strong>{duplicateCount}</strong></div><div><span>Skipped display/monitor rows</span><strong>{records.length - searchable}</strong></div></div>
             <div className="mapping-list">
               <div className="mapping-head"><strong>Detected workbook mapping</strong><span>Columns are detected per worksheet, not fixed to a template.</span></div>
-              {sourceMappings.map((record) => <div className="mapping-row" key={record.sheetName}><strong>{record.sheetName}</strong><span>Header row {record.headerRow}</span><span>Serial column {record.serialColumn + 1}</span><span>{record.cpuColumn >= 0 ? `CPU column ${record.cpuColumn + 1}` : 'CPU column will be added'}</span><span>{record.ramColumn >= 0 ? `RAM column ${record.ramColumn + 1}` : 'RAM column will be added'}</span></div>)}
+              {sourceMappings.map((record) => <div className="mapping-row" key={`${record.sheetName}:${record.serialColumn}`}><strong>{record.sheetName} · {record.role}</strong><span>Header row {record.headerRow}</span><span>Serial column {record.serialColumn + 1}</span><span>{record.modelHint ? `Model hint: ${record.modelHint}` : 'No model hint'}</span><span>{layoutConfirmed ? 'Confirmed' : 'Needs confirmation'}</span></div>)}
             </div>
             <button className="primary-action panel-button" onClick={() => fileInput.current?.click()}>Replace source workbook</button>
           </section>}
@@ -760,8 +666,8 @@ export default function Home() {
           <div className="record-modal-summary"><div><span>CPU</span><strong>{detailRecord.cpu || 'Pending lookup'}</strong><small>{detailRecord.cpuSource || 'No classification'}</small></div><div><span>RAM</span><strong>{detailRecord.ram || 'Pending lookup'}</strong><small>{detailRecord.ramSource || 'No classification'}</small></div><div><span>Validation</span><strong><i className={`validation-badge ${detailRecord.validationStatus}`}>{validationLabel(detailRecord.validationStatus)}</i></strong><small>{detailRecord.validationSummary || 'Evidence checks pending'}</small></div></div>
           <div className="record-modal-body">
             <section><div className="modal-section-title"><span>01</span><div><strong>Available hardware information</strong><small>Serial-specific component groups returned by HP</small></div></div><div className="modal-info-grid">{selectedFieldDefinitions.map((field) => <div key={field.key}><strong>{field.label}</strong><p>{infoText(detailRecord.moreInfo[field.key])}</p></div>)}</div></section>
-            <section><div className="modal-section-title"><span>02</span><div><strong>Raw HP evidence</strong><small>Exact descriptions used by the CPU and RAM parser</small></div></div><div className="modal-evidence-grid"><div><strong>CPU evidence</strong>{detailRecord.cpuEvidence.length ? detailRecord.cpuEvidence.map((item) => <p key={item}>{item}</p>) : <p>No CPU evidence returned by HP</p>}</div><div><strong>RAM evidence</strong>{detailRecord.ramEvidence.length ? detailRecord.ramEvidence.map((item) => <p key={item}>{item}</p>) : <p>No RAM evidence returned by HP</p>}</div></div></section>
-            <section><div className="modal-section-title"><span>03</span><div><strong>Automated validation checks</strong><small>Traceability checks—not a substitute for physical verification</small></div></div><div className="modal-check-grid">{detailRecord.validationChecks.map((check) => <div key={check.key} className={check.status}><span>{check.status === 'pass' ? '✓' : '!'}</span><p><strong>{check.label}</strong>{check.detail}</p></div>)}</div>{detailRecord.reviewReason && <div className="review-callout"><strong>Review reason</strong>{detailRecord.reviewReason}</div>}</section>
+            <section><div className="modal-section-title"><span>02</span><div><strong>Field-level HP evidence</strong><small>Original descriptions, HP part numbers and evidence classification</small></div></div>{detailEvidenceRows.length ? <div className="evidence-row-list">{detailEvidenceRows.map((item, index) => <div key={`${item.field}:${item.partNumber}:${index}`}><span>{item.field}</span><p><strong>{item.value}</strong>{item.description}</p><code>{item.partNumber || 'No part number'}</code><i>{item.serialSpecific ? 'Serial BOM' : item.evidenceType}</i></div>)}</div> : <div className="modal-evidence-grid"><div><strong>CPU evidence</strong>{detailRecord.cpuEvidence.length ? detailRecord.cpuEvidence.map((item) => <p key={item}>{item}</p>) : <p>No CPU evidence returned by HP</p>}</div><div><strong>RAM evidence</strong>{detailRecord.ramEvidence.length ? detailRecord.ramEvidence.map((item) => <p key={item}>{item}</p>) : <p>No RAM evidence returned by HP</p>}</div></div>}</section>
+            <section><div className="modal-section-title"><span>03</span><div><strong>Automated validation checks</strong><small>{detailRecord.resolution ? `${detailRecord.resolution.matchMethod} · ${detailRecord.resolution.candidateCount} HP candidate(s)` : 'Traceability checks—not a substitute for physical verification'}</small></div></div><div className="modal-check-grid">{detailRecord.validationChecks.map((check) => <div key={check.key} className={check.status}><span>{check.status === 'pass' ? '✓' : '!'}</span><p><strong>{check.label}</strong>{check.detail}</p></div>)}</div>{detailRecord.reviewReason && <div className="review-callout"><strong>Review reason</strong>{detailRecord.reviewReason}</div>}</section>
           </div>
           <footer className="record-modal-footer"><div><span>{detailRecord.moreInfo.configurationItems.length} installed-configuration lines</span><span>{detailRecord.moreInfo.sparePartCount} compatible service spares</span><span>{detailRecord.lookupCountry || 'Malaysia'} lookup</span></div>{detailRecord.sourceUrl && <a className="modal-source-button" href={detailRecord.sourceUrl} target="_blank" rel="noreferrer">Open original HP page ↗</a>}</footer>
         </section>
