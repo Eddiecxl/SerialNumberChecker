@@ -8,6 +8,7 @@ import {
 import { detectWorkbookLayout, normalizeSerial } from './lib/workbook/detector';
 import { normalizeDevices } from './lib/workbook/normalizer';
 import type { LayoutAnalysis, WorkbookProfile } from './lib/workbook/types';
+import { sanitizeWorkbookProfile, validateSuggestedMappings } from './lib/workbook/sanitize';
 import { LookupQueue } from './lib/lookup/queue';
 import { buildReviewRows, buildSpecResultRows } from './lib/export/results';
 import { buildEvidenceRows, groupStartIndexes } from './lib/ui/results';
@@ -137,8 +138,10 @@ export default function Home() {
   const [layoutAnalysis, setLayoutAnalysis] = useState<LayoutAnalysis | null>(null);
   const [layoutConfirmed, setLayoutConfirmed] = useState(true);
   const [lookupPaused, setLookupPaused] = useState(false);
+  const [aiResolving, setAiResolving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const originalBuffer = useRef<ArrayBuffer | null>(null);
+  const workbookProfile = useRef<WorkbookProfile | null>(null);
   const lookupQueue = useRef<LookupQueue<HpResponse> | null>(null);
 
   const notify = (message: string) => {
@@ -146,7 +149,7 @@ export default function Home() {
     window.setTimeout(() => setToast(''), 2500);
   };
 
-  const loadWorkbook = async (buffer: ArrayBuffer, name: string) => {
+  const loadWorkbook = async (buffer: ArrayBuffer, name: string, overrideAnalysis?: LayoutAnalysis) => {
     setLoadingFile(true);
     try {
       const { default: XlsxPopulate } = await import('xlsx-populate/browser/xlsx-populate');
@@ -171,7 +174,8 @@ export default function Home() {
         profile.sheets.push({ name: sheet.name(), rows });
         sheetMeta.set(sheet.name(), { matrix: rows, startRow: rangeStartRow, startColumn: rangeStartColumn, lastContentColumn });
       }
-      const analysis = detectWorkbookLayout(profile);
+      workbookProfile.current = profile;
+      const analysis = overrideAnalysis ?? detectWorkbookLayout(profile);
       if (!analysis.mappings.length) throw new Error('No reliable serial number column was found. Add a Serial Number heading and try again.');
       const devices = normalizeDevices(profile, analysis);
       const found: SheetRecord[] = devices.map((device) => {
@@ -264,6 +268,28 @@ export default function Home() {
 
   const updateRecord = (id: string, patch: Partial<SheetRecord>) => {
     setRecords((current) => current.map((record) => record.id === id ? { ...record, ...patch } : record));
+  };
+
+  const assistWorkbookLayout = async () => {
+    if (!workbookProfile.current || !originalBuffer.current || aiResolving) return;
+    setAiResolving(true);
+    try {
+      const response = await fetch('/api/layout-resolve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: sanitizeWorkbookProfile(workbookProfile.current) }),
+      });
+      const data = await response.json() as { mappings?: Parameters<typeof validateSuggestedMappings>[1]; error?: string };
+      if (!response.ok || !data.mappings) throw new Error(data.error || 'AI layout assistance failed');
+      const mappings = validateSuggestedMappings(workbookProfile.current, data.mappings);
+      await loadWorkbook(originalBuffer.current.slice(0), fileName, {
+        mappings, needsConfirmation: true, warnings: ['AI-assisted mapping requires user confirmation.'],
+      });
+      notify('AI suggested a privacy-safe mapping. Review and confirm it.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'AI layout assistance is unavailable; confirm the detected mapping manually.');
+    } finally {
+      setAiResolving(false);
+    }
   };
 
   const runLookup = async () => {
@@ -477,7 +503,7 @@ export default function Home() {
           {records.length > 0 && layoutAnalysis && <section className={`mapping-confirmation ${layoutConfirmed ? 'confirmed' : 'attention'}`}>
             <div><span>{layoutConfirmed ? '✓' : '!'}</span><p><strong>{layoutAnalysis.mappings.length} device column{layoutAnalysis.mappings.length === 1 ? '' : 's'} detected</strong>{layoutAnalysis.mappings.map((mapping) => `${mapping.sheetName}: ${mapping.role} serial`).join(' · ')}</p></div>
             {!layoutConfirmed
-              ? <button onClick={() => { setLayoutConfirmed(true); notify('Workbook mapping confirmed'); }}>Confirm mapping</button>
+              ? <div className="mapping-actions"><button className="assist-button" onClick={assistWorkbookLayout} disabled={aiResolving}>{aiResolving ? 'Checking…' : 'AI layout assist'}</button><button onClick={() => { setLayoutConfirmed(true); notify('Workbook mapping confirmed'); }}>Confirm mapping</button></div>
               : <small>Mapping confirmed for this lookup run</small>}
           </section>}
 

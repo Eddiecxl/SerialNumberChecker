@@ -297,6 +297,9 @@ body { font-size:14px; -webkit-font-smoothing:antialiased; text-rendering:optimi
 .mapping-confirmation.attention { border-color:#efcf98; background:#fffaf1; }
 .mapping-confirmation.attention>div>span { background:#ffead0; color:#a86708; }
 .mapping-confirmation button { flex:0 0 auto; border:0; border-radius:9px; padding:10px 14px; background:#173d83; color:#fff; font-size:11px; font-weight:750; cursor:pointer; }
+.mapping-actions { display:flex; gap:8px; flex:0 0 auto; }
+.mapping-confirmation .assist-button { border:1px solid #b9c9df; background:#fff; color:#315b9f; }
+.mapping-confirmation button:disabled { cursor:wait; opacity:.65; }
 .control-deck { padding:21px 24px; border-radius:16px; }
 .action-buttons button { height:44px; padding:0 18px; border-radius:10px; font-size:12px; }
 .progress-block>div:first-child { font-size:11px; }
@@ -448,6 +451,8 @@ footer { font-size:10px; }
 
 @media (max-width:900px) {
   .mapping-confirmation { align-items:flex-start; flex-direction:column; }
+  .mapping-actions { width:100%; }
+  .mapping-actions button { flex:1; }
   .evidence-row-list>div { grid-template-columns:1fr; gap:5px; }
   .table-scroll { max-height:none; overflow:visible; }
   table,table.more-table,tbody,tr,td { display:block; width:100%; }
