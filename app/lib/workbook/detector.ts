@@ -30,7 +30,9 @@ export function normalizeSerial(value: unknown): string {
 }
 
 export function isSerialLike(value: unknown): boolean {
-  const serial = normalizeSerial(value);
+  const original = text(value);
+  if (/\s/.test(original)) return false;
+  const serial = normalizeSerial(original);
   return serial.length >= 7
     && serial.length <= 20
     && /[A-Z]/.test(serial)
