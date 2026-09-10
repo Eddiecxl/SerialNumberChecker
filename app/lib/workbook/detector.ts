@@ -144,6 +144,8 @@ function mappingFor(
     productNumberColumnIndex: column((label) => /\b(product number|product no|sku|product id)\b/.test(label)),
     deviceTypeColumnIndex: column((label) => /\b(device type|form factor|type)\b/.test(label)),
     assetColumnIndex: column((label) => /\b(asset|asset no|asset number)\b/.test(label)),
+    usernameColumnIndex: column((label) => /\b(user name|username|user|owner|assigned to|employee name|employee|custodian)\b/.test(label)),
+    departmentColumnIndex: column((label) => /\b(department|dept|business unit|division|cost centre|cost center)\b/.test(label)),
     cpuColumnIndex: column((label) => /\b(cpu|processor)\b/.test(label)),
     ramColumnIndex: column((label) => /\b(ram|memory)\b/.test(label)),
     confidence,

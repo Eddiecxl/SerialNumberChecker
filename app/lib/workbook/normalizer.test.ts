@@ -7,9 +7,9 @@ const profile: WorkbookProfile = {
   sheets: [{
     name: "Collection",
     rows: [
-      ["No", "User Name", "NewSerialNumber", "New Model", "OldSerialNumber", "Old Model"],
-      [1, "Person A", "5cg-1234-abc", "EliteBook 840", "1CZ00306R3", "ProDesk 400"],
-      [2, "Person B", "5CG1234ABC", "EliteBook 840", "MXL1234567", "ProBook 440"],
+      ["No", "User Name", "Department", "NewSerialNumber", "New Model", "OldSerialNumber", "Old Model"],
+      [1, "Person A", "Operations", "5cg-1234-abc", "EliteBook 840", "1CZ00306R3", "ProDesk 400"],
+      [2, "Person B", "IT", "5CG1234ABC", "EliteBook 840", "MXL1234567", "ProBook 440"],
     ],
   }],
 };
@@ -26,6 +26,21 @@ describe("normalizeDevices", () => {
       { role: "Old", serialNumber: "MXL1234567", modelHint: "ProBook 440", sourceRow: 3 },
     ]);
     expect(records[0].sourceGroupKey).toBe("Collection:2");
+    expect(records.map(({ usernameHint, departmentHint }) => ({ usernameHint, departmentHint }))).toEqual([
+      { usernameHint: "Person A", departmentHint: "Operations" },
+      { usernameHint: "Person A", departmentHint: "Operations" },
+      { usernameHint: "Person B", departmentHint: "IT" },
+      { usernameHint: "Person B", departmentHint: "IT" },
+    ]);
+  });
+
+  it("leaves ownership undefined when the source has no ownership columns", () => {
+    const rows: WorkbookProfile = {
+      sheets: [{ name: "Sheet1", rows: [["Serial", "Model"], ["5CG1234ABC", "EliteBook"]] }],
+    };
+    const [record] = normalizeDevices(rows, detectWorkbookLayout(rows));
+    expect(record.usernameHint).toBeUndefined();
+    expect(record.departmentHint).toBeUndefined();
   });
 
   it("retains duplicate occurrences while normalizing their lookup key", () => {

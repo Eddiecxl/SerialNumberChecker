@@ -123,6 +123,7 @@ td small { display:block; margin-top:3px; color:#9aa3b1; font-size:8px; }
 .table-status.skipped { background:#f0f2f4; color:#9aa2ae; }
 .row-error { color:#b35a50; max-width:100%; overflow-wrap:anywhere; }
 .device-name { display:block; margin-top:5px; color:#536177; line-height:1.35; overflow-wrap:anywhere; }
+.ownership-line { display:block; margin-top:5px; color:#526784; font-weight:650; line-height:1.4; overflow-wrap:anywhere; }
 .more-table th:nth-child(1),.more-table td:nth-child(1) { width:4%; text-align:center; }
 .more-table th:nth-child(2),.more-table td:nth-child(2) { width:18%; }
 .more-table th:nth-child(3),.more-table td:nth-child(3) { width:18%; }

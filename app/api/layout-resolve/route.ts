@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       temperature: 0,
       messages: [{
         role: "system",
-        content: "Map workbook device columns only. Never infer hardware. Return JSON with a mappings array containing sheetName, headerRowIndex, serialColumnIndex, role, and optional modelColumnIndex, productNumberColumnIndex, deviceTypeColumnIndex, assetColumnIndex.",
+        content: "Map workbook device columns only. Never infer hardware. Return JSON with a mappings array containing sheetName, headerRowIndex, serialColumnIndex, role, and optional modelColumnIndex, productNumberColumnIndex, deviceTypeColumnIndex, assetColumnIndex, usernameColumnIndex, departmentColumnIndex.",
       }, {
         role: "user",
         content: JSON.stringify(body.profile),

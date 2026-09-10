@@ -17,12 +17,29 @@ describe("detectWorkbookLayout", () => {
     expect(analysis.mappings.map((mapping) => ({
       serial: mapping.serialColumnIndex,
       model: mapping.modelColumnIndex,
+      username: mapping.usernameColumnIndex,
+      department: mapping.departmentColumnIndex,
       role: mapping.role,
     }))).toEqual([
-      { serial: 3, model: 4, role: "New" },
-      { serial: 6, model: 7, role: "Old" },
+      { serial: 3, model: 4, username: 1, department: 2, role: "New" },
+      { serial: 6, model: 7, username: 1, department: 2, role: "Old" },
     ]);
     expect(analysis.needsConfirmation).toBe(false);
+  });
+
+  it("recognizes common ownership and business-unit headings", () => {
+    const [mapping] = detectWorkbookLayout({
+      sheets: [{
+        name: "Assets",
+        rows: [
+          ["Assigned To", "Business Unit", "Serial Number", "Model"],
+          ["Aminah", "Finance", "5CG1234ABC", "EliteBook"],
+          ["Daniel", "Operations", "MXL1234567", "ProBook"],
+        ],
+      }],
+    }).mappings;
+
+    expect(mapping).toMatchObject({ usernameColumnIndex: 0, departmentColumnIndex: 1 });
   });
 
   it("detects Appendix 3A after title rows and relates existing CPU and RAM columns", () => {

@@ -8,6 +8,8 @@ const rows = [{
   SourceModel: "HP EliteBook",
   HPProductNumber: "8M4X3AV",
   HPProductName: "HP EliteBook 840 G11",
+  Username: "Aminah Rahman",
+  Department: "Finance",
   CPU: "Intel Core Ultra 7 155U",
   RAM: "32 GB DDR5-5600",
   ValidationStatus: "VERIFIED",
@@ -39,6 +41,7 @@ describe("writeResultWorksheets", () => {
       reviewRows: [{
         Role: "Old", SerialNumber: "MXL0000001", SourceModel: "HP ZBook",
         HPProductNumber: "6CK22AV", HPProductName: "HP ZBook 17 G6",
+        Username: "Daniel Tan", Department: "Operations",
         CPU: "Intel Core i7-9750H", RAM: "32 GB DDR4-2666",
         ValidationStatus: "REVIEW REQUIRED", ReviewReason: "Compatible spare evidence only",
         RecommendedAction: "Open the HP source and validate before sharing.",
@@ -48,6 +51,7 @@ describe("writeResultWorksheets", () => {
         Role: "New", SerialNumber: "5CG0000001", SourceSheet: "Collection", SourceRow: 2,
         SourceModel: "HP EliteBook", SourceProductNumber: "8M4X3AV", SourceAsset: "A-001",
         HPProductNumber: "8M4X3AV", HPProductName: "HP EliteBook 840 G11",
+        Username: "Aminah Rahman", Department: "Finance",
         ValidationStatus: "VERIFIED", ReviewReason: "",
         MatchMethod: "product-number", CandidateCount: 1, CandidateProducts: "",
         CPUDescriptionEvidence: "Intel Core Ultra 7 155U", RAMDescriptionEvidence: "32 GB DDR5-5600",
@@ -67,13 +71,15 @@ describe("writeResultWorksheets", () => {
     expect(workbook.sheet("Spec Results")!.cell("A1").value()).toBe("Device specification results");
     expect(workbook.sheet("Spec Results")!.cell("A4").value()).toBe("Role");
     expect(workbook.sheet("Spec Results")!.cell("B5").value()).toBe("5CG0000001");
-    expect(workbook.sheet("Spec Results")!.cell("R5").value()).toBeUndefined();
+    expect(workbook.sheet("Spec Results")!.cell("F5").value()).toBe("Aminah Rahman");
+    expect(workbook.sheet("Spec Results")!.cell("G5").value()).toBe("Finance");
+    expect(workbook.sheet("Spec Results")!.cell("T5").value()).toBeUndefined();
     expect(workbook.sheet("Review Required")!.cell("A1").value()).toBe("Devices requiring review");
     expect(workbook.sheet("Evidence Detail")!.cell("A1").value()).toBe("HP lookup evidence detail");
 
     const output = await workbook.outputAsync();
     const reopened = await XlsxPopulate.fromDataAsync(output as ArrayBuffer);
-    expect(reopened.sheet("Spec Results")!.cell("R5").value()).toBeUndefined();
+    expect(reopened.sheet("Spec Results")!.cell("T5").value()).toBeUndefined();
     expect(reopened.sheet("Spec Results")!.panes()).toBeUndefined();
     expect(reopened.sheet("Review Required")!.panes()).toBeUndefined();
     expect(reopened.sheet("Evidence Detail")!.panes()).toBeUndefined();

@@ -32,6 +32,8 @@ type SheetRecord = {
   modelHint: string;
   productNumberHint: string;
   asset: string;
+  username: string;
+  department: string;
   description: string;
   existingCpu: string;
   existingRam: string;
@@ -195,7 +197,7 @@ export default function Home() {
           sheetName: device.sourceSheet, number: numberColumn >= 0 ? text(row[numberColumn]) : String(device.sourceRow - mapping.headerRowIndex - 1),
           serialNumber: device.normalizedSerial, role: device.role, sourceGroupKey: device.sourceGroupKey,
           modelHint: device.modelHint ?? '', productNumberHint: device.productNumberHint ?? '',
-          asset: device.assetHint ?? '', description,
+          asset: device.assetHint ?? '', username: device.usernameHint ?? '', department: device.departmentHint ?? '', description,
           existingCpu: mapping.cpuColumnIndex !== undefined ? text(row[mapping.cpuColumnIndex]) : '',
           existingRam: mapping.ramColumnIndex !== undefined ? text(row[mapping.ramColumnIndex]) : '',
           cpuColumn: mapping.cpuColumnIndex !== undefined ? meta.startColumn - 1 + mapping.cpuColumnIndex : -1,
@@ -400,7 +402,7 @@ export default function Home() {
     const info = record.moreInfo;
     const componentText = info.configurationItems.map((item) => `${item.partNumber} ${item.description}`).join(' ');
     const evidenceText = [...record.cpuEvidence, ...record.ramEvidence, ...record.validationChecks.map((check) => `${check.label} ${check.detail}`)].join(' ');
-    const matchesQuery = `${record.serialNumber} ${record.description} ${record.productName} ${record.productNumber} ${record.cpu} ${record.ram} ${evidenceText} ${Object.values(info).flat().join(' ')} ${componentText}`.toLowerCase().includes(query.toLowerCase());
+    const matchesQuery = `${record.serialNumber} ${record.username} ${record.department} ${record.description} ${record.productName} ${record.productNumber} ${record.cpu} ${record.ram} ${evidenceText} ${Object.values(info).flat().join(' ')} ${componentText}`.toLowerCase().includes(query.toLowerCase());
     const matchesFilter = filter === 'all' || (activeView === 'validation'
       ? (filter === 'complete' && record.validationStatus === 'supported') || (filter === 'review' && ['review', 'unavailable'].includes(record.validationStatus))
       : (filter === 'complete' && ['found', 'inferred'].includes(record.status)) || (filter === 'review' && ['review', 'error'].includes(record.status)));
@@ -540,7 +542,7 @@ export default function Home() {
                       {filtered.map((record, index) => (
                         <tr key={record.id} className={`${record.status === 'looking' ? 'row-loading' : ''} ${groupedRowStarts.has(index) ? 'group-start' : ''}`}>
                           <td className="row-number">{record.number}</td>
-                          <td><span className="role-badge">{record.role}</span><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || record.asset}</small></td>
+                          <td><span className="role-badge">{record.role}</span><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || record.asset}</small>{(record.username || record.department) && <small className="ownership-line">{[record.username, record.department].filter(Boolean).join(' · ')}</small>}</td>
                           <td className="description-cell">{record.productName || record.description || '—'}</td>
                           <td className="existing-cell"><span>{record.existingCpu || 'CPU —'}</span><span>{record.existingRam || 'RAM —'}</span></td>
                           <td><input className="result-input" value={record.cpu} onChange={(event) => updateRecord(record.id, { cpu: event.target.value, status: 'review', validationStatus: 'review', manuallyReviewed: false })} placeholder={record.status === 'skipped' ? 'Not applicable' : record.status === 'looking' ? 'Looking up…' : 'Pending lookup'} disabled={record.status === 'skipped' || record.status === 'looking'} /></td>
@@ -574,7 +576,7 @@ export default function Home() {
                           const availableFields = selectedFieldDefinitions.filter((field) => info[field.key].length);
                           return <tr key={record.id} className={groupedRowStarts.has(index) ? 'group-start' : ''}>
                             <td className="row-number">{record.number}</td>
-                            <td><span className="role-badge">{record.role}</span><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || 'Product number pending'}</small><span className="device-name">{record.productName || record.description || 'Pending lookup'}</span></td>
+                            <td><span className="role-badge">{record.role}</span><strong className="serial-value">{record.serialNumber}</strong><small>{record.productNumber || 'Product number pending'}</small><span className="device-name">{record.productName || record.description || 'Pending lookup'}</span>{(record.username || record.department) && <small className="ownership-line">{[record.username, record.department].filter(Boolean).join(' · ')}</small>}</td>
                             <td className="primary-spec">{record.cpu || 'Pending lookup'}<small>{record.cpuSource === 'serial-bom' ? 'Installed configuration' : record.cpuSource || ''}</small></td>
                             <td className="primary-spec">{record.ram || 'Pending lookup'}<small>{record.ramSource === 'serial-bom' ? 'Installed configuration' : record.ramSource?.startsWith('spare') ? 'Compatible spare evidence' : record.ramSource || ''}</small></td>
                             <td>
@@ -615,7 +617,7 @@ export default function Home() {
                   </div>
                   <div className="validation-register">
                     {filtered.map((record) => <article className="validation-record" key={record.id}>
-                      <header><div><span className="record-no">{record.number}</span><strong>{record.serialNumber}</strong><small>{record.productNumber || 'Product pending'} · {record.productName || record.description || 'Device pending'}</small></div><span className={`validation-badge ${record.validationStatus}`}>{validationLabel(record.validationStatus)}</span></header>
+                      <header><div><span className="record-no">{record.number}</span><strong>{record.serialNumber}</strong><small>{record.productNumber || 'Product pending'} · {record.productName || record.description || 'Device pending'}</small>{(record.username || record.department) && <small className="ownership-line">{[record.username, record.department].filter(Boolean).join(' · ')}</small>}</div><span className={`validation-badge ${record.validationStatus}`}>{validationLabel(record.validationStatus)}</span></header>
                       <div className="comparison-grid">
                         <section><div className="comparison-title"><strong>CPU</strong><span>{record.cpuSource || 'pending'}</span></div><div className="app-output"><small>APP OUTPUT</small><p>{record.cpu || 'Pending lookup'}</p></div><div className="raw-evidence"><small>RAW HP EVIDENCE USED</small>{record.cpuEvidence.length ? record.cpuEvidence.map((item) => <p key={item}>{item}</p>) : <p>No supporting CPU line returned</p>}</div></section>
                         <section><div className="comparison-title"><strong>RAM</strong><span>{record.ramSource || 'pending'}</span></div><div className="app-output"><small>APP OUTPUT</small><p>{record.ram || 'Pending lookup'}</p></div><div className="raw-evidence"><small>RAW HP EVIDENCE USED</small>{record.ramEvidence.length ? record.ramEvidence.map((item) => <p key={item}>{item}</p>) : <p>No supporting RAM line returned</p>}</div></section>

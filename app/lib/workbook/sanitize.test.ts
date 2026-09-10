@@ -35,6 +35,8 @@ describe("validateSuggestedMappings", () => {
       serialColumnIndex: 2,
       role: "Primary",
       modelColumnIndex: 3,
+      usernameColumnIndex: 0,
+      departmentColumnIndex: 1,
     }])).toHaveLength(1);
 
     expect(() => validateSuggestedMappings(profile, [{

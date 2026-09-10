@@ -14,6 +14,8 @@ const device = (index: number, role: "New" | "Old", validationStatus = "supporte
   modelHint: `${role} source model`,
   productNumberHint: `${role}-SKU`,
   asset: `A-${index}`,
+  username: `Person ${index}`,
+  department: role === "New" ? "Operations" : "IT",
   description: `${role} source model`,
   productNumber: "HP-SKU",
   productName: "HP resolved model",
@@ -68,7 +70,7 @@ describe("buildReviewRows", () => {
     expect(rows.every((row) => Boolean(row.RecommendedAction))).toBe(true);
     expect(Object.keys(rows[0])).toEqual([
       "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName",
-      "CPU", "RAM", "ValidationStatus", "ReviewReason", "RecommendedAction",
+      "Username", "Department", "CPU", "RAM", "ValidationStatus", "ReviewReason", "RecommendedAction",
       "CandidateProducts", "HPSource",
     ]);
   });
@@ -80,7 +82,7 @@ describe("readable export views", () => {
 
     expect(Object.keys(row)).toEqual([
       "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName",
-      "CPU", "RAM", "ValidationStatus", "Storage", "Graphics", "Display",
+      "Username", "Department", "CPU", "RAM", "ValidationStatus", "Storage", "Graphics", "Display",
       "Battery", "Network", "Power", "Keyboard", "SystemBoard", "OperatingSystem",
       "ReviewReason", "SourceSheet", "SourceRow", "HPSource",
     ]);
@@ -94,7 +96,7 @@ describe("readable export views", () => {
     expect(Object.keys(row)).toEqual([
       "Role", "SerialNumber", "SourceSheet", "SourceRow", "SourceModel",
       "SourceProductNumber", "SourceAsset", "HPProductNumber", "HPProductName",
-      "ValidationStatus", "ReviewReason", "MatchMethod", "CandidateCount", "CandidateProducts", "CPUDescriptionEvidence",
+      "Username", "Department", "ValidationStatus", "ReviewReason", "MatchMethod", "CandidateCount", "CandidateProducts", "CPUDescriptionEvidence",
       "RAMDescriptionEvidence", "EvidencePartNumbers", "EvidenceDescriptions",
       "Optical", "Audio", "OtherSpecifications", "LookupCountry", "LookupTime", "HPSource",
     ]);

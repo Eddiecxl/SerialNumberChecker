@@ -35,6 +35,8 @@ export function normalizeDevices(
         productNumberHint: valueAt(row, mapping.productNumberColumnIndex),
         deviceTypeHint: valueAt(row, mapping.deviceTypeColumnIndex),
         assetHint: valueAt(row, mapping.assetColumnIndex),
+        usernameHint: valueAt(row, mapping.usernameColumnIndex),
+        departmentHint: valueAt(row, mapping.departmentColumnIndex),
       });
     }
   }

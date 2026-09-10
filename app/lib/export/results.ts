@@ -21,6 +21,8 @@ export interface ExportDevice {
   modelHint?: string;
   productNumberHint?: string;
   asset?: string;
+  username?: string;
+  department?: string;
   description?: string;
   productNumber?: string;
   productName?: string;
@@ -90,6 +92,8 @@ export function buildSpecResultRows(devices: ExportDevice[]): SpecResultRow[] {
       SourceAsset: device.asset ?? "",
       HPProductNumber: device.productNumber ?? "",
       HPProductName: device.productName ?? "",
+      Username: device.username ?? "",
+      Department: device.department ?? "",
       CPU: device.cpu ?? "",
       RAM: device.ram ?? "",
       ValidationStatus: validationLabel(device.validationStatus),
@@ -127,6 +131,8 @@ export function buildPrimaryResultRows(devices: ExportDevice[]): PrimaryResultRo
     SourceModel: row.SourceModel,
     HPProductNumber: row.HPProductNumber,
     HPProductName: row.HPProductName,
+    Username: row.Username,
+    Department: row.Department,
     CPU: row.CPU,
     RAM: row.RAM,
     ValidationStatus: row.ValidationStatus,
@@ -155,6 +161,8 @@ export function buildReviewRows(devices: ExportDevice[]): ReviewResultRow[] {
       SourceModel: row.SourceModel,
       HPProductNumber: row.HPProductNumber,
       HPProductName: row.HPProductName,
+      Username: row.Username,
+      Department: row.Department,
       CPU: row.CPU,
       RAM: row.RAM,
       ValidationStatus: row.ValidationStatus,
@@ -178,6 +186,8 @@ export function buildEvidenceRows(devices: ExportDevice[]): EvidenceResultRow[] 
     SourceAsset: row.SourceAsset,
     HPProductNumber: row.HPProductNumber,
     HPProductName: row.HPProductName,
+    Username: row.Username,
+    Department: row.Department,
     ValidationStatus: row.ValidationStatus,
     ReviewReason: row.ReviewReason,
     MatchMethod: row.MatchMethod,

@@ -31,6 +31,8 @@ export interface SuggestedMapping {
   productNumberColumnIndex?: number;
   deviceTypeColumnIndex?: number;
   assetColumnIndex?: number;
+  usernameColumnIndex?: number;
+  departmentColumnIndex?: number;
 }
 
 function raw(value: unknown): string {
@@ -110,6 +112,8 @@ export function validateSuggestedMappings(
         suggestion.productNumberColumnIndex,
         suggestion.deviceTypeColumnIndex,
         suggestion.assetColumnIndex,
+        suggestion.usernameColumnIndex,
+        suggestion.departmentColumnIndex,
       ].every((column) => validOptionalColumn(column, columnCount))) {
       throw new Error("Suggested mapping points outside the workbook.");
     }

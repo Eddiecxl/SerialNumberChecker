@@ -53,19 +53,19 @@ const DATA_ROW = 5;
 
 export const PRIMARY_HEADERS = [
   "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName",
-  "CPU", "RAM", "ValidationStatus", "Storage", "Graphics", "Display", "Battery",
+  "Username", "Department", "CPU", "RAM", "ValidationStatus", "Storage", "Graphics", "Display", "Battery",
   "Network", "Power", "Keyboard", "SystemBoard", "OperatingSystem", "ReviewReason",
   "SourceSheet", "SourceRow", "HPSource",
 ];
 
 export const REVIEW_HEADERS = [
-  "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName", "CPU", "RAM",
+  "Role", "SerialNumber", "SourceModel", "HPProductNumber", "HPProductName", "Username", "Department", "CPU", "RAM",
   "ValidationStatus", "ReviewReason", "RecommendedAction", "CandidateProducts", "HPSource",
 ];
 
 export const EVIDENCE_HEADERS = [
   "Role", "SerialNumber", "SourceSheet", "SourceRow", "SourceModel", "SourceProductNumber",
-  "SourceAsset", "HPProductNumber", "HPProductName", "ValidationStatus", "ReviewReason",
+  "SourceAsset", "HPProductNumber", "HPProductName", "Username", "Department", "ValidationStatus", "ReviewReason",
   "MatchMethod", "CandidateCount", "CandidateProducts", "CPUDescriptionEvidence", "RAMDescriptionEvidence", "EvidencePartNumbers",
   "EvidenceDescriptions", "Optical", "Audio", "OtherSpecifications", "LookupCountry", "LookupTime",
   "HPSource",
@@ -206,11 +206,12 @@ export function writeResultWorksheets(workbook: WorkbookLike, data: ResultWorksh
     tabColor: "173D83",
     widths: {
       Role: 10, SerialNumber: 18, SourceModel: 27, HPProductNumber: 19, HPProductName: 34,
+      Username: 24, Department: 22,
       CPU: 34, RAM: 30, ValidationStatus: 20, Storage: 32, Graphics: 28, Display: 30,
       Battery: 27, Network: 30, Power: 27, Keyboard: 28, SystemBoard: 30,
       OperatingSystem: 28, ReviewReason: 46, SourceSheet: 20, SourceRow: 12, HPSource: 18,
     },
-    wrapped: new Set(["SourceModel", "HPProductName", "CPU", "RAM", "Storage", "Graphics", "Display", "Battery", "Network", "Power", "Keyboard", "SystemBoard", "OperatingSystem", "ReviewReason"]),
+    wrapped: new Set(["SourceModel", "HPProductName", "Username", "Department", "CPU", "RAM", "Storage", "Graphics", "Display", "Battery", "Network", "Power", "Keyboard", "SystemBoard", "OperatingSystem", "ReviewReason"]),
   });
   const reviewSheetName = writeSheet(workbook, {
     baseName: "Review Required",
@@ -221,10 +222,11 @@ export function writeResultWorksheets(workbook: WorkbookLike, data: ResultWorksh
     tabColor: "D89020",
     widths: {
       Role: 10, SerialNumber: 18, SourceModel: 28, HPProductNumber: 19, HPProductName: 34,
+      Username: 24, Department: 22,
       CPU: 32, RAM: 30, ValidationStatus: 20, ReviewReason: 48, RecommendedAction: 52,
       CandidateProducts: 48, HPSource: 18,
     },
-    wrapped: new Set(["SourceModel", "HPProductName", "CPU", "RAM", "ReviewReason", "RecommendedAction", "CandidateProducts"]),
+    wrapped: new Set(["SourceModel", "HPProductName", "Username", "Department", "CPU", "RAM", "ReviewReason", "RecommendedAction", "CandidateProducts"]),
   });
   const evidenceSheetName = writeSheet(workbook, {
     baseName: "Evidence Detail",
@@ -236,11 +238,12 @@ export function writeResultWorksheets(workbook: WorkbookLike, data: ResultWorksh
     widths: {
       Role: 10, SerialNumber: 18, SourceSheet: 20, SourceRow: 12, SourceModel: 28,
       SourceProductNumber: 20, SourceAsset: 18, HPProductNumber: 19, HPProductName: 34,
+      Username: 24, Department: 22,
       ValidationStatus: 20, ReviewReason: 48, MatchMethod: 19, CandidateCount: 14, CandidateProducts: 48, CPUDescriptionEvidence: 48,
       RAMDescriptionEvidence: 48, EvidencePartNumbers: 40, EvidenceDescriptions: 56,
       Optical: 30, Audio: 30, OtherSpecifications: 48, LookupCountry: 17, LookupTime: 24, HPSource: 18,
     },
-    wrapped: new Set(["SourceModel", "HPProductName", "ReviewReason", "CandidateProducts", "CPUDescriptionEvidence", "RAMDescriptionEvidence", "EvidencePartNumbers", "EvidenceDescriptions", "Optical", "Audio", "OtherSpecifications"]),
+    wrapped: new Set(["SourceModel", "HPProductName", "Username", "Department", "ReviewReason", "CandidateProducts", "CPUDescriptionEvidence", "RAMDescriptionEvidence", "EvidencePartNumbers", "EvidenceDescriptions", "Optical", "Audio", "OtherSpecifications"]),
   });
 
   return { primarySheetName, reviewSheetName, evidenceSheetName };

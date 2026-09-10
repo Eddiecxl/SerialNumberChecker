@@ -26,6 +26,8 @@ export interface ColumnMapping {
   productNumberColumnIndex?: number;
   deviceTypeColumnIndex?: number;
   assetColumnIndex?: number;
+  usernameColumnIndex?: number;
+  departmentColumnIndex?: number;
   cpuColumnIndex?: number;
   ramColumnIndex?: number;
   confidence: number;
@@ -57,4 +59,6 @@ export interface DeviceRecord {
   productNumberHint?: string;
   deviceTypeHint?: string;
   assetHint?: string;
+  usernameHint?: string;
+  departmentHint?: string;
 }
