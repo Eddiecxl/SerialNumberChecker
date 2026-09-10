@@ -18,7 +18,7 @@ const normalize = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').t
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
 const hpCountryCode = 'MY';
 const hpCountryName = 'Malaysia';
-const cpuPattern = /\b(?:core\s+ultra\s+[3579]\s+\d{3}[a-z]{0,2}|i[3579]-\d{4,5}[a-z]{0,3}|xeon(?:\s+[a-z0-9-]+){1,3}|ryzen(?:\s+ai)?\s+\d+(?:\s+pro)?(?:\s+[a-z0-9-]+){0,2}|celeron(?:\s+[a-z0-9-]+){1,2}|pentium(?:\s+[a-z0-9-]+){1,2})\b/i;
+const cpuPattern = /\b(?:(?:core\s+)?ultra\s+[3579]\s+\d{3}[a-z]{0,2}|i[3579]-\d{4,5}[a-z]{0,3}|xeon(?:\s+[a-z0-9-]+){1,3}|ryzen(?:\s+ai)?\s+\d+(?:\s+pro)?(?:\s+[a-z0-9-]+){0,2}|celeron(?:\s+[a-z0-9-]+){1,2}|pentium(?:\s+[a-z0-9-]+){1,2})\b/i;
 const memoryPattern = /(\d+)\s*GB.*(?:DDR[345]|LPDDR[345X]*|UDIMM|SODIMM)|(?:DDR[345]|LPDDR[345X]*|UDIMM|SODIMM).*?(\d+)\s*GB/i;
 
 function json(body: unknown, status = 200) {
@@ -46,7 +46,7 @@ function describeCpu(unitParts: HpPart[], spareParts: HpPart[]) {
   const cores = details.match(/(?:^|\s)(\d{1,2})C(?:\s|$)/i)?.[1];
   const speed = details.match(/(\d+(?:\.\d+)?)\s*GHz/i)?.[1];
   const watts = details.match(/(\d{2,3})\s*W(?:\s|$)/i)?.[1];
-  const brand = /^i[3579]-/i.test(model) ? `Intel Core ${model}` : /^core\s+ultra/i.test(model) ? `Intel ${model}` : model;
+  const brand = /^i[3579]-/i.test(model) ? `Intel Core ${model}` : /^(?:core\s+)?ultra/i.test(model) ? `Intel Core ${model.replace(/^core\s+/i, '')}` : model;
   return {
     value: [brand, cores ? `${cores} cores` : '', speed ? `${speed} GHz` : '', watts ? `${watts} W` : ''].filter(Boolean).join(', '),
     source: 'serial-bom', evidence: unique([unitText, spareText]), reason: '',
@@ -185,10 +185,50 @@ export async function POST(request: Request) {
       console.warn('HP PartSurfer lookup failed', { status: response.status, country: hpCountryCode });
       return json({ error: 'HP PartSurfer is temporarily unavailable. Please retry this row.' }, response.status === 429 ? 429 : 502);
     }
-    const payload = await response.json() as HpPayload & { Body?: Record<string, unknown> };
+    let payload = await response.json() as HpPayload & { Body?: Record<string, unknown> };
     const candidates = extractProductCandidates(payload, cleanSerial);
-    const resolution = resolveProduct(candidates, { serial: cleanSerial, modelHint, productNumberHint });
-    const selected = resolution.selected;
+    let resolution = resolveProduct(candidates, { serial: cleanSerial, modelHint, productNumberHint });
+    let selected = resolution.selected;
+
+    const requiresProductSelection = Array.isArray(payload.Body?.SNRProductLists)
+      && payload.Body.SNRProductLists.length > 0;
+    if (requiresProductSelection && selected?.productNumber) {
+      const selectedProductNumber = selected.productNumber;
+      const selectedInput = `/SerialNumber/GetSerialNumber/${encodeURIComponent(cleanSerial)}/ProductNumber/${encodeURIComponent(selectedProductNumber)}/country/${hpCountryCode}/usertype/EXT`;
+      const selectedResponse = await fetch(`https://partsurfer.hpcloud.hp.com/bff/proxy/get?input=${selectedInput}`, {
+        cache: 'no-store', signal: AbortSignal.timeout(20_000),
+        headers: {
+          Accept: 'application/json, text/plain, */*', Origin: 'https://partsurfer.hp.com',
+          Referer: 'https://partsurfer.hp.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36',
+        },
+      });
+      if (!selectedResponse.ok) {
+        console.warn('HP PartSurfer selected-product lookup failed', {
+          status: selectedResponse.status,
+          country: hpCountryCode,
+          productNumber: selectedProductNumber,
+        });
+        return json({ error: 'HP PartSurfer could not load the selected product configuration. Please retry this row.' }, selectedResponse.status === 429 ? 429 : 502);
+      }
+
+      const selectedPayload = await selectedResponse.json() as HpPayload & { Body?: Record<string, unknown> };
+      const selectedCandidates = extractProductCandidates(selectedPayload, cleanSerial);
+      const loadedProduct = selectedCandidates.find((candidate) => normalize(candidate.productNumber).toUpperCase() === normalize(selectedProductNumber).toUpperCase());
+      if (loadedProduct) {
+        payload = selectedPayload;
+        selected = loadedProduct;
+        resolution = { ...resolution, selected: loadedProduct };
+      } else {
+        selected = undefined;
+        resolution = {
+          status: 'UNRESOLVED',
+          candidates,
+          matchMethod: 'not-found',
+          reason: `HP listed product ${selectedProductNumber}, but did not return its serial-specific configuration.`,
+        };
+      }
+    }
     const unitParts = (selected?.unitConfiguration ?? []) as HpPart[];
     const spareParts = (selected?.spareParts ?? []) as HpPart[];
     const specifications = parseSpecifications({ unitConfiguration: unitParts, spareParts });

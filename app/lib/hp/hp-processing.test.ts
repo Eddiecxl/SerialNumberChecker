@@ -41,6 +41,16 @@ describe("resolveProduct", () => {
   it("marks zero candidates unresolved", () => {
     expect(resolveProduct([], { serial: "1CZ00306R3" }).status).toBe("UNRESOLVED");
   });
+
+  it("uniquely matches HP's abbreviated product description from workbook model identifiers", () => {
+    const result = resolveProduct([
+      candidate("8M4X3AV", "BU IDS UMA U7-155U RTKUSBC 840 G11", "5CG5124NY0"),
+      candidate("K9H95EA", "H350G2U34030UQX500NXNCN04NNPa ALL", "5CG5124NY0"),
+    ], { serial: "5CG5124NY0", modelHint: "HP ELITEBOOK 840 G11" });
+
+    expect(result.selected?.productNumber).toBe("8M4X3AV");
+    expect(result.matchMethod).toBe("model-signature");
+  });
 });
 
 describe("parseSpecifications", () => {
@@ -127,5 +137,21 @@ describe("extractProductCandidates", () => {
       { wwsnrsinput: { product_no: "B2", user_name: "Model B" }, unit_configuration: [], spare_part: [] },
     ] } }, "SERIAL001");
     expect(multiple.map((item) => item.productNumber)).toEqual(["A1", "B2"]);
+  });
+
+  it("adapts HP's multiple-product selection list before a BOM is loaded", () => {
+    const candidates = extractProductCandidates({ Body: { SNRProductLists: [
+      { product_Id: "8M4X3AV", product_Desc: "BU IDS UMA U7-155U RTKUSBC 840 G11" },
+      { product_Id: "K9H95EA", product_Desc: "H350G2U34030UQX500NXNCN04NNPa ALL" },
+    ] } }, "5CG5124NY0");
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]).toMatchObject({
+      productNumber: "8M4X3AV",
+      productName: "BU IDS UMA U7-155U RTKUSBC 840 G11",
+      serialNumber: "5CG5124NY0",
+      unitConfiguration: [],
+      spareParts: [],
+    });
   });
 });

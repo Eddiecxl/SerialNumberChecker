@@ -21,7 +21,7 @@ export interface ProductResolution {
   status: ValidationStatus;
   selected?: HpProductCandidate;
   candidates: HpProductCandidate[];
-  matchMethod: "product-number" | "serial-identity" | "model-exact" | "unique-candidate" | "ambiguous" | "not-found";
+  matchMethod: "product-number" | "serial-identity" | "model-exact" | "model-signature" | "unique-candidate" | "ambiguous" | "not-found";
   reason: string;
 }
 

@@ -1,6 +1,6 @@
 import type { EvidenceType, HpRawPart, Specification, SpecificationEvidence } from "./types";
 
-const CPU_PATTERN = /\b(?:core\s+ultra\s+[3579]\s+\d{3}[a-z]{0,2}|i[3579]-\d{4,5}[a-z]{0,3}|xeon(?:\s+[a-z0-9-]+){1,3}|ryzen(?:\s+ai)?\s+\d+(?:\s+pro)?(?:\s+[a-z0-9-]+){0,2}|celeron(?:\s+[a-z0-9-]+){1,2}|pentium(?:\s+[a-z0-9-]+){1,2})\b/i;
+const CPU_PATTERN = /\b(?:(?:core\s+)?ultra\s+[3579]\s+\d{3}[a-z]{0,2}|i[3579]-\d{4,5}[a-z]{0,3}|xeon(?:\s+[a-z0-9-]+){1,3}|ryzen(?:\s+ai)?\s+\d+(?:\s+pro)?(?:\s+[a-z0-9-]+){0,2}|celeron(?:\s+[a-z0-9-]+){1,2}|pentium(?:\s+[a-z0-9-]+){1,2})\b/i;
 const MEMORY_PATTERN = /(\d+)\s*GB.*(?:DDR[345]|LPDDR[345X]*|UDIMM|SODIMM)|(?:DDR[345]|LPDDR[345X]*|UDIMM|SODIMM).*?(\d+)\s*GB/i;
 
 const CATEGORY_PATTERNS: Array<[string, RegExp]> = [
@@ -48,7 +48,7 @@ function ramValue(description: string): string {
 
 function cpuValue(description: string): string {
   const model = description.match(CPU_PATTERN)?.[0] ?? description;
-  const brand = /^i[3579]-/i.test(model) ? `Intel Core ${model}` : /^core\s+ultra/i.test(model) ? `Intel ${model}` : model;
+  const brand = /^i[3579]-/i.test(model) ? `Intel Core ${model}` : /^(?:core\s+)?ultra/i.test(model) ? `Intel Core ${model.replace(/^core\s+/i, "")}` : model;
   const cores = description.match(/(?:^|\s)(\d{1,2})C(?:\s|$)/i)?.[1];
   const speed = description.match(/(\d+(?:\.\d+)?)\s*GHz/i)?.[1];
   const watts = description.match(/(\d{2,3})\s*W(?:\s|$)/i)?.[1];

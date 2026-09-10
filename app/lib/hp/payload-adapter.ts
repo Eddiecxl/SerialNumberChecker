@@ -6,6 +6,11 @@ type Bom = {
   wwsnrsinput?: Record<string, unknown>;
 };
 
+type ProductListItem = {
+  product_Id?: unknown;
+  product_Desc?: unknown;
+};
+
 function clean(value: unknown): string {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -20,7 +25,7 @@ export function extractProductCandidates(payload: unknown, requestedSerial: stri
     .flatMap((value) => Array.isArray(value) ? value : value ? [value] : [])
     .filter(isBom);
 
-  return possible.map((bom) => {
+  const bomCandidates = possible.map((bom) => {
     const identity = bom.wwsnrsinput ?? {};
     return {
       productNumber: clean(identity.product_no ?? identity.product_number),
@@ -30,4 +35,21 @@ export function extractProductCandidates(payload: unknown, requestedSerial: stri
       spareParts: Array.isArray(bom.spare_part) ? bom.spare_part : [],
     };
   });
+
+  const productList = Array.isArray(body.SNRProductLists) ? body.SNRProductLists : [];
+  const selectionCandidates = productList.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const item = value as ProductListItem;
+    const productNumber = clean(item.product_Id);
+    if (!productNumber) return [];
+    return [{
+      productNumber,
+      productName: clean(item.product_Desc),
+      serialNumber: requestedSerial,
+      unitConfiguration: [],
+      spareParts: [],
+    }];
+  });
+
+  return [...bomCandidates, ...selectionCandidates];
 }

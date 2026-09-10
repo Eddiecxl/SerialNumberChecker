@@ -4,6 +4,13 @@ function key(value: unknown): string {
   return String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+function modelSignature(value: unknown): string[] {
+  return String(value ?? "")
+    .toUpperCase()
+    .match(/[A-Z0-9]+/g)
+    ?.filter((token) => /\d/.test(token) && token.length >= 2) ?? [];
+}
+
 function choose(
   matches: HpProductCandidate[],
   candidates: HpProductCandidate[],
@@ -48,6 +55,20 @@ export function resolveProduct(
       "Exact normalized workbook model matched an HP candidate.",
     );
     if (modelResult) return modelResult;
+
+    const signature = modelSignature(hints.modelHint);
+    if (signature.length >= 2) {
+      const signatureResult = choose(
+        candidates.filter((candidate) => {
+          const candidateKey = key(candidate.productName);
+          return signature.every((identifier) => candidateKey.includes(identifier));
+        }),
+        candidates,
+        "model-signature",
+        `Workbook model identifiers (${signature.join(", ")}) uniquely matched an HP candidate.`,
+      );
+      if (signatureResult) return signatureResult;
+    }
   }
 
   if (candidates.length === 1) {
