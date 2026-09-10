@@ -9,6 +9,7 @@ const customDomain = String(process.env.CLOUDFLARE_CUSTOM_DOMAIN ?? '')
   .replace(/\/$/, '');
 
 const config = JSON.parse(await readFile(configPath, 'utf8'));
+config.compatibility_date = '2026-09-10';
 
 if (customDomain) {
   if (

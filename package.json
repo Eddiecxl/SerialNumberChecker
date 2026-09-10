@@ -10,7 +10,7 @@
     "dev": "npm run sync-data && vinext dev",
     "build": "npm run sync-data && vinext build",
     "build:cloud": "node scripts/sync-base-files.mjs --cloud && vinext build && node scripts/prepare-cloudflare-config.mjs",
-    "deploy:ci": "wrangler deploy",
+    "deploy:ci": "wrangler deploy --config dist/server/wrangler.json",
     "deploy:cloud": "npm run build:cloud && npm run deploy:ci",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
