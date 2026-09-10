@@ -1,4 +1,8 @@
 import { NextResponse } from 'next/server';
+import { extractProductCandidates } from '@/app/lib/hp/payload-adapter';
+import { resolveProduct } from '@/app/lib/hp/product-resolver';
+import { parseSpecifications } from '@/app/lib/hp/spec-parser';
+import { validateDevice } from '@/app/lib/hp/validation';
 
 type HpPart = Record<string, string | number | null | undefined>;
 type HpSerialBom = {
@@ -160,7 +164,11 @@ function buildMoreInfo(unitParts: HpPart[], spareParts: HpPart[], serialBom: HpS
 export async function POST(request: Request) {
   const lookedUpAt = new Date().toISOString();
   try {
-    const { serial } = await request.json() as { serial?: string };
+    const { serial, modelHint, productNumberHint } = await request.json() as {
+      serial?: string;
+      modelHint?: string;
+      productNumberHint?: string;
+    };
     const cleanSerial = normalize(serial).toUpperCase();
     if (!/^[A-Z0-9-]{4,32}$/.test(cleanSerial)) return json({ error: 'Enter a valid device serial number.' }, 400);
 
@@ -177,48 +185,59 @@ export async function POST(request: Request) {
       console.warn('HP PartSurfer lookup failed', { status: response.status, country: hpCountryCode });
       return json({ error: 'HP PartSurfer is temporarily unavailable. Please retry this row.' }, response.status === 429 ? 429 : 502);
     }
-    const payload = await response.json() as HpPayload;
-    const serialBom = payload?.Body?.SerialNumberBOM ?? {};
-    const unitParts = (serialBom?.unit_configuration ?? []) as HpPart[];
-    const spareParts = (serialBom?.spare_part ?? []) as HpPart[];
-    const cpu = describeCpu(unitParts, spareParts);
-    const ram = describeRam(unitParts, spareParts);
-    const identity = serialBom?.wwsnrsinput ?? {};
-    const reasons = unique([cpu.reason, ['spare-bom-review', 'not-listed'].includes(ram.source) ? ram.reason : '']);
-    const validationChecks = [
-      {
-        key: 'identity', label: 'Serial identity returned',
-        status: identity.product_no || identity.user_name ? 'pass' : 'review',
-        detail: identity.product_no || identity.user_name ? 'HP returned product identity for this serial number.' : 'HP did not return product identity.',
-      },
-      {
-        key: 'unit-bom', label: 'Serial-specific configuration returned',
-        status: unitParts.length ? 'pass' : 'review',
-        detail: unitParts.length ? `${unitParts.length} serial-specific configuration lines received.` : 'No serial-specific configuration lines were received.',
-      },
-      {
-        key: 'cpu-evidence', label: 'CPU result supported by HP evidence',
-        status: cpu.source === 'serial-bom' && cpu.evidence.length ? 'pass' : 'review',
-        detail: cpu.source === 'serial-bom' ? 'CPU output was parsed from a serial-specific HP configuration line.' : 'No serial-specific CPU evidence was available.',
-      },
-      {
-        key: 'ram-evidence', label: 'RAM result supported by HP evidence',
-        status: ram.source === 'serial-bom' && ram.evidence.length ? 'pass' : 'review',
-        detail: ram.source === 'serial-bom' ? 'RAM output was parsed from serial-specific HP configuration line(s).' : ram.evidence.length ? 'RAM is based on compatible HP spare-part evidence, not confirmed installed memory.' : 'No RAM evidence was available.',
-      },
-    ] as const;
+    const payload = await response.json() as HpPayload & { Body?: Record<string, unknown> };
+    const candidates = extractProductCandidates(payload, cleanSerial);
+    const resolution = resolveProduct(candidates, { serial: cleanSerial, modelHint, productNumberHint });
+    const selected = resolution.selected;
+    const unitParts = (selected?.unitConfiguration ?? []) as HpPart[];
+    const spareParts = (selected?.spareParts ?? []) as HpPart[];
+    const specifications = parseSpecifications({ unitConfiguration: unitParts, spareParts });
+    const validation = validateDevice(resolution, specifications);
+    const cpuSpec = specifications.find((specification) => specification.field === 'cpu');
+    const ramSpec = specifications.find((specification) => specification.field === 'ram');
+    const cpu = cpuSpec ? {
+      value: cpuSpec.normalizedValue,
+      source: cpuSpec.evidenceType,
+      evidence: cpuSpec.evidence.map((item) => item.hpDescription),
+      reason: cpuSpec.reviewReason ?? '',
+    } : describeCpu(unitParts, spareParts);
+    const ram = ramSpec ? {
+      value: ramSpec.normalizedValue,
+      source: ramSpec.evidenceType === 'compatible-spare' ? (ramSpec.evidence.length > 1 ? 'spare-bom-review' : 'spare-bom') : ramSpec.evidenceType,
+      candidates: ramSpec.evidence.map((item) => item.hpDescription),
+      evidence: ramSpec.evidence.map((item) => item.hpDescription),
+      reason: ramSpec.reviewReason ?? '',
+    } : describeRam(unitParts, spareParts);
+    const serialBomValue = payload?.Body?.SerialNumberBOM;
+    const serialBom = (!Array.isArray(serialBomValue) && serialBomValue && typeof serialBomValue === 'object'
+      ? serialBomValue : {}) as HpSerialBom;
+    const reasons = unique([validation.reason, cpu.reason, ram.reason]);
+    const validationChecks = validation.checks;
     const passedChecks = validationChecks.filter((check) => check.status === 'pass').length;
-    const validationStatus = !unitParts.length && !spareParts.length ? 'unavailable'
-      : validationChecks.every((check) => check.status === 'pass') ? 'supported' : 'review';
+    const validationStatus = validation.status === 'VERIFIED' ? 'supported'
+      : validation.status === 'UNRESOLVED' ? 'unavailable' : 'review';
     return json({
-      serial: cleanSerial, productNumber: normalize(identity.product_no), productName: normalize(identity.user_name),
+      serial: cleanSerial, productNumber: selected?.productNumber ?? '', productName: selected?.productName ?? '',
       cpu: cpu.value, ram: ram.value, cpuSource: cpu.source, ramSource: ram.source,
       cpuEvidence: cpu.evidence, ramEvidence: ram.evidence, ramCandidates: ram.candidates ?? [],
       reviewReason: reasons.join(' '), validationStatus, validationChecks,
       validationSummary: `${passedChecks}/${validationChecks.length} automated evidence checks passed`,
-      parserVersion: 'HP BOM parser 2.1',
+      validationStatusLabel: validation.status,
+      parserVersion: 'HP BOM parser 3.0',
+      resolution: {
+        status: resolution.status,
+        matchMethod: resolution.matchMethod,
+        reason: resolution.reason,
+        candidateCount: resolution.candidates.length,
+        candidates: resolution.candidates.map((candidate) => ({
+          productNumber: candidate.productNumber,
+          productName: candidate.productName,
+          serialNumber: candidate.serialNumber ?? '',
+        })),
+      },
+      specifications,
       moreInfo: buildMoreInfo(unitParts, spareParts, serialBom),
-      found: Boolean(unitParts.length || spareParts.length || identity.product_no),
+      found: Boolean(candidates.length),
       sourceUrl: `https://partsurfer.hp.com/?searchtext=${encodeURIComponent(cleanSerial)}&searchby=swp`,
       lookupCountry: hpCountryName, lookedUpAt, unitConfigurationCount: unitParts.length,
     });
